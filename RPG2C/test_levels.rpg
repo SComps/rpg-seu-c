@@ -1,0 +1,15 @@
+     H                                                                          
+     FINPUT   I   F  80        DISK                                          
+     FREPORT  O   F  80        PRINTER                                       
+     IINPUT   AA  01                                                           
+     I                                        1   4 CAT   L1                
+     I                                        7  132AMNT                    
+     C                     ADD  AMNT      TOTAL   72                            
+     CL1                   ADD  TOTAL     GRND    92                            
+     CL1                   Z-ADD0         TOTAL                                 
+     OREPORT  D                                                                 
+     O                          CAT       10                                        
+     O                          AMNT      20                                        
+     OREPORT  T L1                                                              
+     O                          'SUBTOT'  10                                        
+     O                          TOTAL     20                                        

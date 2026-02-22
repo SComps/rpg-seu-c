@@ -75,8 +75,10 @@ Public Class RpgParser
             spec.StartPos = ExtractInt(line, 44, 4)
             spec.EndPos = ExtractInt(line, 48, 4)
             spec.DecimalPos = Extract(line, 52, 1)
-            spec.FieldName = Extract(line, 53, 6)
             spec.IsNumeric = Not String.IsNullOrWhiteSpace(spec.DecimalPos)
+            spec.DataType = Extract(line, 43, 1) ' P=Packed, B=Binary
+            spec.FieldName = Extract(line, 53, 6)
+            spec.ControlLevel = Extract(line, 59, 2) ' L1-L9
 
             If String.IsNullOrWhiteSpace(spec.FieldName) Then
                 Errors.Add(New RpgError(lineNum, "MISSING FIELD NAME", "I-Spec field description must define a field name."))
@@ -88,7 +90,14 @@ Public Class RpgParser
 
     Private Function ParseCalcSpec(line As String, lineNum As Integer) As CalcSpec
         Dim spec As New CalcSpec()
-        spec.Indicators = Extract(line, 9, 8)
+        spec.ControlLevel = Extract(line, 7, 2) ' L0-L9, LR, SR
+        spec.Indicator1 = Extract(line, 10, 2)
+        spec.Not1 = Extract(line, 9, 1) = "N"
+        spec.Indicator2 = Extract(line, 13, 2)
+        spec.Not2 = Extract(line, 12, 1) = "N"
+        spec.Indicator3 = Extract(line, 16, 2)
+        spec.Not3 = Extract(line, 15, 1) = "N"
+
         spec.Factor1 = Extract(line, 18, 10)
         spec.Opcode = Extract(line, 28, 5)
         spec.Factor2 = Extract(line, 33, 10)
@@ -121,8 +130,14 @@ Public Class RpgParser
             ' Field description line
             spec.IsRecordLine = False
             spec.FieldName = Extract(line, 32, 6)
+            spec.EditCode = Extract(line, 38, 1)
             spec.EndPos = ExtractInt(line, 40, 4)
-            spec.Constant = Extract(line, 45, 24)
+            Dim constVal = Extract(line, 45, 26) ' 45-70
+            If Not String.IsNullOrWhiteSpace(spec.FieldName) Then
+                spec.EditWord = constVal
+            Else
+                spec.Constant = constVal
+            End If
         End If
         
         Return spec
@@ -180,10 +195,19 @@ Public Class InputSpec
     Public Property DecimalPos As String
     Public Property FieldName As String
     Public Property IsNumeric As Boolean
+    Public Property ControlLevel As String
+    Public Property DataType As String ' P=Packed, B=Binary
 End Class
 
 Public Class CalcSpec
-    Public Property Indicators As String
+    Public Property ControlLevel As String
+    Public Property Indicator1 As String
+    Public Property Not1 As Boolean
+    Public Property Indicator2 As String
+    Public Property Not2 As Boolean
+    Public Property Indicator3 As String
+    Public Property Not3 As Boolean
+
     Public Property Factor1 As String
     Public Property Opcode As String
     Public Property Factor2 As String
@@ -206,4 +230,6 @@ Public Class OutputSpec
     Public Property FieldName As String
     Public Property EndPos As Integer
     Public Property Constant As String
+    Public Property EditCode As String
+    Public Property EditWord As String
 End Class

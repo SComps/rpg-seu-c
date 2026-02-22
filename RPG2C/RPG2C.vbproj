@@ -4,10 +4,6 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>RPG2C</RootNamespace>
     <TargetFramework>net9.0</TargetFramework>
-    <PublishAot>true</PublishAot>
-    <TrimMode>link</TrimMode>
-    <IsTrimmable>true</IsTrimmable>
-    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
 </Project>

@@ -1,0 +1,14 @@
+     H                                                                          
+     FCONSOLE O   F  80        PRINTER                                       
+     C                     MOVE 'START'   MSG1   5                             
+     C                     EXSR SUB1                                           
+     C                     MOVE 'END'     MSG2   5                             
+     C                     SETON                     LR                    
+     C           SUB1      BEGSR                                                
+     C                     MOVE 'INSIDE'  MSG3   6                             
+     C                     EXCPT                                               
+     C                     ENDSR                                               
+     OCONSOLE D                                                                 
+     O                          MSG1      10                                     
+     O                          MSG2      20                                     
+     O                          MSG3      30                                     

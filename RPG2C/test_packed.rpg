@@ -1,0 +1,9 @@
+     H                                                                          
+     FINBIN   I   F  80        DISK                                             
+     FOUTPUT  O   F  80        PRINTER                                          
+     IINBIN   AA  01                                                            
+     I                                    P   1   42PKDATA                  
+     C                     ADD  10.50     PKDATA                                      
+     C                     SETON                     LR                    
+     OOUTPUT  D                                                                 
+     O                         PKDATAZ   10                                     
