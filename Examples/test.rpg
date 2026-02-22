@@ -1,0 +1,10 @@
+     H                                                                          
+     FINPUT   IP         80             PRINTER                                 
+     FOUTPUT  O         132             PRINTER                                 
+     IINPUT   AA  01                                                            
+     I                                        1   50NUM1                        
+     I                                        6  100NUM2                        
+     C           NUM1      ADD  NUM2      RES     60                            
+     OOUTPUT  D  1                                                              
+     O                         RES        10                                    
+     O                                    35 'HELLO WORLD'                      

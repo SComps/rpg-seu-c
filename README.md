@@ -35,5 +35,11 @@ A shared library for handling TN3270 telnet negotiation and data streams.
 2. Run `dotnet run <source.rpg>`.
 3. Check the generated `<source>.c` and `<source>.lst` files.
 
+## Examples
+The `Examples/` directory contains sample code to help you get started:
+- `test.rpg`: A basic sequential RPG II program demonstrating F, I, C, and O specs.
+- `error_test.rpg`: A sample designed to show-case the transpiler's error reporting.
+- `data.txt`: Sample input data for running the compiled `test.c`.
+
 ## Visual Studio Compatibility
 The solution and projects are compatible with Visual Studio 2022 and higher (including future previews like VS 2026), targeting .NET 9.0.

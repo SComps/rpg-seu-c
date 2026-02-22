@@ -1,0 +1,11 @@
+     FINPUT   IP         80             PRINTER
+     FOUTPUT  O         132             PRINTER
+     XINVALID LINE TEST
+     IINPUT   AA  01
+     I                                      1   50NUM1
+     I                                      6  100
+     C           NUM1      ADD  NUM2      RES     60
+     C           NUM1      BADOPNUM2      RES
+     OOUTPUT  D  1 
+     O                         RES        10
+     O                                    35 'HELLO WORLD'

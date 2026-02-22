@@ -7,7 +7,6 @@
 *.c
 *.exe
 *.obj
-data.txt
-output.txt
-error_test.rpg
-test.rpg
+# Keep specific examples in the Examples directory tracked
+!Examples/*.rpg
+!Examples/data.txt
