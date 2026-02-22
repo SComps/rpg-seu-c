@@ -1,0 +1,13 @@
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.lst
+*.c
+*.exe
+*.obj
+data.txt
+output.txt
+error_test.rpg
+test.rpg
