@@ -4,9 +4,11 @@
 *.user
 *.suo
 *.lst
-*.c
 *.exe
 *.obj
 # Keep specific examples in the Examples directory tracked
 !Examples/*.rpg
 !Examples/data.txt
+# Allow MVS-SEU C source files
+!MVS-SEU/*.c
+!MVS-SEU/*.h
