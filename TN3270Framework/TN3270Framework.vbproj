@@ -4,6 +4,8 @@
     <RootNamespace>TN3270Framework</RootNamespace>
     <TargetFramework>net9.0</TargetFramework>
     <IsTrimmable>true</IsTrimmable>
+    <TrimMode>full</TrimMode>
+    <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
 
   <ItemGroup>
