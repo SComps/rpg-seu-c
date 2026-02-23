@@ -257,17 +257,19 @@ PCOPY    DS    0H
          LA    4,44
 PLENOK   STH   4,DSNLEN
          BCTR  4,0
-         MVI   DSNWORK,X'40'
-         MVC   DSNWORK+1(43),DSNWORK
+         MVI   TUNAMDSN,X'40'
+         MVC   TUNAMDSN+1(43),TUNAMDSN
          EX    4,MVCDSN
          SR    15,15
          BR    11
 PARSERR  LA    15,8
          BR    11
-MVCDSN   MVC   DSNWORK(0),0(5)
+MVCDSN   MVC   TUNAMDSN(0),0(5)
 *
 ALLOCDS  DS    0H
          MVI   S99VERB,X'01'       ALLOC
+*        SET ACTUAL DSN LEN IN TU
+         MVC   TUNAMLEN,DSNLEN
          LA    1,S99RB             ADDR OF RB
          ST    1,S99RBP            STORE IN PTR
          OI    S99RBP,X'80'        END OF LIST
@@ -344,7 +346,6 @@ FIELDADR DC    CL2' '
 ROWPOS   DC    CL2' '
 DLINNUM  DC    CL5' '
 CURPTR   DC    F'0'
-DSNWORK  DC    CL44' '
 DSNLEN   DC    H'0'
 HDRTXT   DC    CL26'SEU Editor (IFOX/MVS)'
 STATMSG  DC    CL30'LOADED'
@@ -388,7 +389,7 @@ S99TXTP2 DC    A(S99TUPL)
 S99TUPL  DC    A(TUNAM),A(TUDDN),X'80',AL3(TUSTA)
 TUNAM    DC    X'0001',H'1'
 TUNAMLEN DC    H'44'
-         DC    CL44' '
+TUNAMDSN DC    CL44' '
 TUDDN    DC    X'0002',H'1',H'8',CL8'SYSASMEU'
 TUSTA    DC    X'0004',H'1',H'1',X'08'
 *
