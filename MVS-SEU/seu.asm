@@ -12,54 +12,49 @@ BASEINIT LA    11,2048(12)         R11 = R12 + 4096
 *
 * ============================================================== *
 * PARAMETER PARSING  (HANDLES BOTH OS PARM AND TSO CPPL/CBUF)
-* ON ENTRY R1 -> ADDRESS OF PARM POINTER (OS PARM FORMAT)
-*   PARM FORMAT:  HL2=LEN  CL(N)=TEXT
-*   CPPL  FORMAT: A(CBUF) A(...) A(...) A(...)
-*   CBUF  FORMAT: HL2=TOTLEN  HL2=OFFSET  CL(N)=CMDTEXT
+*   OS PARM:  HL2=LEN  CL(N)=TEXT
+*   CPPL:     A(CBUF) A(...)...
+*   CBUF:     HL2=TOTLEN  HL2=OFFSET  CL(N)=CMDTEXT
 * ============================================================== *
          L     3,0(1)              -> PARM AREA
          LTR   3,3
          BZ    PARAMERR            NO PARM
 *
-* DETECT FORMAT: OS PARM HL2 LENGTH FIELD IS BELIEVABLE?
          LH    4,0(3)              GET H-LEN
          LTR   4,4
          BZ    PARAMERR            ZERO LENGTH
 *
-* IF LENGTH > 256 OR BYTE 0 IS UNPRINTABLE, TREAT AS CPPL
+* IF LENGTH > 256, TREAT AS CPPL (DEREFERENCE CBUF POINTER)
          CH    4,=H'256'
          BNH   TRYOS               SMALL: PROBABLY OS PARM
-*
-* TREAT AS CPPL: DEREFERENCE CBUF POINTER
          L     3,0(3)              -> CBUF
-         LH    15,2(3)             CBUF OFFSET TO TEXT
-         LH    4,0(3)              CBUF TOTAL LENGTH
+         LH    15,2(3)             CBUF TEXT OFFSET
+         LH    4,0(3)              CBUF TOTAL LEN
          SR    4,15                TEXT LENGTH
          BNP   PARAMERR
-         LA    5,0(3,15)           R5 -> TEXT START
+         LA    5,0(3,15)           R5 -> TEXT
          B     PSKIP
 *
-* OS PARM FORMAT
-TRYOS    LA    5,2(3)              R5 -> TEXT (SKIP 2-BYTE LEN)
+TRYOS    LA    5,2(3)              R5 -> TEXT (PAST 2-BYTE LEN)
 *
 * SKIP LEADING BLANKS AND QUOTES
 PSKIP    LTR   4,4
          BNP   PARAMERR
          CLI   0(5),X'40'          BLANK?
-         BE    PNEXT
+         BE    PNXT
          CLI   0(5),X'7D'          QUOTE?
-         BE    PNEXT
+         BE    PNXT
          B     PFOUND
-PNEXT    LA    5,1(5)
+PNXT     LA    5,1(5)
          BCT   4,PSKIP
          B     PARAMERR
 *
-* FOUND START OF DSN
-PFOUND   LR    8,5                 R8 -> DSN START
+* R8 = START OF TOKEN
+PFOUND   LR    8,5
 *
-* SCAN FOR END OF DSN (BLANK/QUOTE/END)
+* SCAN TO END (BLANK / QUOTE / EOS)
 PSCAN    LTR   4,4
-         BZ    PEND                END OF FIELD = END OF DSN
+         BZ    PEND
          CLI   0(5),X'40'
          BE    PEND
          CLI   0(5),X'7D'
@@ -67,22 +62,60 @@ PSCAN    LTR   4,4
          LA    5,1(5)
          BCT   4,PSCAN
 *
-PEND     SR    5,8                 R5 = DSN LENGTH (REUSE)
-         LR    4,5
+PEND     LR    4,5
+         SR    4,8                 TOTAL TOKEN LENGTH
          LTR   4,4
-         BZ    PARAMERR            EMPTY DSN
-*
+         BZ    PARAMERR
          CH    4,=H'44'            CAP AT 44
          BNH   PLENOK
          LH    4,=H'44'
 PLENOK   STH   4,DSNLEN
 *
-         MVI   TUNAMDSN,X'40'      BLANK DSN BUFFER
+* BLANK THE TEXT UNIT BUFFERS
+         MVI   TUNAMDSN,X'40'
          MVC   TUNAMDSN+1(43),TUNAMDSN
-         BCTR  4,0                 LEN-1 FOR EX
-         EX    4,MVCDSN            COPY DSN
+         MVI   MEMBDSN,X'40'
+         MVC   MEMBDSN+1(7),MEMBDSN
+*
+* COPY TOKEN INTO TUNAMDSN
          LH    4,DSNLEN
-         STH   4,TUNAMLEN          TELL SVC99 DSN LENGTH
+         BCTR  4,0
+         EX    4,MVCDSN
+         LH    4,DSNLEN
+*
+* SCAN FOR '(' IN TUNAMDSN - SPLIT PDS FROM MEMBER
+* R8 STILL POINTS TO ORIGINAL TEXT; USE IT DIRECTLY
+         LR    9,8                 R9 -> SCAN PTR
+         LR    6,4                 R6 = TOTAL LEN (COUNTER)
+SPLTLP   LTR   6,6
+         BZ    NOSPL               NO '(' -> PLAIN DSN
+         CLI   0(9),X'4D'          X'4D' = '(' IN EBCDIC
+         BE    SPLTAT
+         LA    9,1(9)
+         BCT   6,SPLTLP
+         B     NOSPL
+*
+* FOUND '(' AT R9
+SPLTAT   LR    15,9
+         SR    15,8                PDS LEN = OFFSET TO '('
+         STH   15,TUNAMLEN         STORE PDS PORTION LEN
+* MEMBER IS AFTER '(' - FIND IT AND COPY
+         LA    9,1(9)              SKIP '('
+         LH    6,DSNLEN            TOTAL
+         LH    15,TUNAMLEN         PDS LEN
+         SR    6,15                CHARS AFTER PDS = '(' + MEMBER + ')'
+         S     6,=F'2'             STRIP '(' AND ')'
+         BNP   NOSPL               NO ROOM FOR MEMBER
+         CH    6,=H'8'             CAP MEMBER AT 8
+         BNH   MBLENOK
+         LH    6,=H'8'
+MBLENOK  STH   6,TUMBLEN
+         BCTR  6,0
+         EX    6,MVCMEMB           COPY MEMBER NAME
+         B     PARSOK
+*
+NOSPL    STH   4,TUNAMLEN          PLAIN DSN (NO MEMBER)
+PARSOK   EQU   *
 *
 * DEBUG: SHOW PARSED DSN WITH BRACKETS
          MVC   DEBUGBUF(10),DSNPRFX
@@ -140,7 +173,7 @@ ALLOCDS  ST    14,SALLOC
          MVI   S99VERB,X'01'       ALLOC
          LA    1,S99RB
          ST    1,S99RBP
-         OI    S99RBP,X'80'        LAST ENTRY
+         OI    S99RBP,X'80'
          LA    1,S99RBP
          SVC   99
          LR    15,15
@@ -201,40 +234,37 @@ FREEDS   MVI   S99VERB,X'02'       UNALLOC
 * ============================================================== *
 DRAWSCN  ST    14,SDRAW
          LA    4,DATSTR
-* HEADER ROW
-         MVI   0(4),X'11'          SBA
-         MVC   1(2,4),POS0101      ROW 1 COL 1
-         MVI   3(4),X'1D'          SF
-         MVI   4(4),X'E8'          PROT/HIGH
+         MVI   0(4),X'11'
+         MVC   1(2,4),POS0101
+         MVI   3(4),X'1D'
+         MVI   4(4),X'E8'
          MVC   5(26,4),HDRTXT
          LA    4,31(4)
-* STATUS ROW
-         MVI   0(4),X'11'          SBA
-         MVC   1(2,4),POS2401      ROW 24 COL 1
-         MVI   3(4),X'1D'          SF
-         MVI   4(4),X'E8'          PROT/HIGH
+         MVI   0(4),X'11'
+         MVC   1(2,4),POS2401
+         MVI   3(4),X'1D'
+         MVI   4(4),X'E8'
          MVC   5(30,4),STATMSG
          LA    4,35(4)
-* DATA ROWS
          LA    5,3
          L     6,TOPREC
-DLOOP    MVI   0(4),X'11'          SBA
+DLOOP    MVI   0(4),X'11'
          BAL   14,GETROW
          MVC   1(2,4),ROWPOS
-         MVI   3(4),X'1D'          SF
-         MVI   4(4),X'60'          UNPROT
+         MVI   3(4),X'1D'
+         MVI   4(4),X'60'
          LA    7,1(6)
          CVD   7,DBLWRK
          UNPK  DLINNUM,DBLWRK+5(3)
          OI    DLINNUM+4,X'F0'
          MVC   5(5,4),DLINNUM
-         MVI   10(4),X'1D'         SF UNPROT
+         MVI   10(4),X'1D'
          MVI   11(4),X'40'
          LA    8,RECS
          LR    15,6
          MH    15,H80
          AR    8,15
-         MVC   12(80,4),0(8)       COPY RECORD
+         MVC   12(80,4),0(8)
          LA    4,92(4)
          LA    5,1(5)
          LA    6,1(6)
@@ -245,9 +275,6 @@ DLOOP    MVI   0(4),X'11'          SBA
          BR    14
 SDRAW    DS    F
 *
-* ============================================================== *
-* DOTPUT / DOTGET / PROCINP
-* ============================================================== *
 DOTPUT   L     1,CURPTR
          LA    0,DATSTR
          SR    1,0
@@ -284,9 +311,6 @@ PRTN     L     14,SPROC
          BR    14
 SPROC    DS    F
 *
-* ============================================================== *
-* GETROW - LOOK UP SBA ROW POSITION
-* ============================================================== *
 GETROW   LA    15,POSTBL
          LR    1,5
          SLL   1,1
@@ -294,8 +318,9 @@ GETROW   LA    15,POSTBL
          MVC   ROWPOS(2),0(15)
          BR    14
 *
-* EX TARGET FOR DSN COPY
+* EX EXECUTE TARGETS (MUST NOT BE BRANCHED INTO)
 MVCDSN   MVC   TUNAMDSN(0),0(8)
+MVCMEMB  MVC   MEMBDSN(0),0(9)
 *
 * ============================================================== *
 * DATA AREAS
@@ -338,21 +363,31 @@ INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(GM),RECFM=FB,LRECL=80,  X
                EODAD=LEOF
 OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
 *
+* ============================================================== *
+* SVC 99 REQUEST BLOCK AND TEXT UNITS
+* ============================================================== *
 S99RBP   DS    F
 S99RB    DS    0F
          DC    AL1(20)             RB LENGTH
-S99VERB  DC    AL1(1)              VERB (ALLOC=1)
+S99VERB  DC    AL1(1)              VERB (1=ALLOC)
 S99FLAG1 DC    H'0'
 S99ERROR DC    H'0'
 S99INFO  DC    H'0'
-S99TXTP2 DC    A(S99TUPL)          TEXT UNIT POINTER LIST
+S99TXTP2 DC    A(S99TUPL)
          DC    F'0',F'0'
-S99TUPL  DC    A(TUNAM)
-         DC    A(TUDDN)
-         DC    X'80',AL3(TUSTA)    LAST ENTRY
+S99TUPL  DC    A(TUNAM)            DSNAME
+         DC    A(TUMBR)            MEMBER
+         DC    A(TUDDN)            DDNAME
+         DC    X'80',AL3(TUSTA)    STATUS (LAST ENTRY)
+*
 TUNAM    DC    X'0001',H'1'        KEY=DSNAME, 1 VALUE
-TUNAMLEN DC    H'0'                FILL IN AT RUN TIME
+TUNAMLEN DC    H'0'                FILLED AT RUN TIME
 TUNAMDSN DC    CL44' '
+*
+TUMBR    DC    X'0003',H'1'        KEY=MEMBER, 1 VALUE
+TUMBLEN  DC    H'0'                FILLED AT RUN TIME (0=NO MEMBER)
+MEMBDSN  DC    CL8' '
+*
 TUDDN    DC    X'0002',H'1',X'0008',CL8'SYSASMEU'
 TUSTA    DC    X'0004',H'1',X'0001',X'08'
 *
