@@ -249,7 +249,7 @@ UPOK     ST    15,TOPREC
 DODN     L     15,TOPREC
          AH    15,=H'18'
          L     6,RECCNT
-         C     15,6
+         CR    15,6
          BNH   DNOK
          LR    15,6
          DS    0H
