@@ -4,10 +4,10 @@ SEU      CSECT
 * ================================================================ *
          STM   14,12,12(13)
          BALR  12,0
-         USING *,12,11,10          ESTABLISH 12K ADDRESSABILITY
-         LA    11,2048(12)         R11 = BASE + 4KB
+         USING *,12,11,10          12K ADDRESSABILITY
+         LA    11,2048(12)         OFFSET 4KB
          LA    11,2048(11)
-         LA    10,2048(11)         R10 = BASE + 8KB
+         LA    10,2048(11)         OFFSET 8KB
          LA    10,2048(10)
 *
          ST    13,SAVEARA+4
@@ -28,6 +28,7 @@ SEU      CSECT
 * ================================================================ *
 * MAIN LOOP                                                       *
 * ================================================================ *
+         DS    0H
 MAINLP   BAL   14,DRAWSCN          BUILD SCREEN
          L     1,CURPTR
          LA    0,SCRBUF
@@ -42,6 +43,7 @@ MAINLP   BAL   14,DRAWSCN          BUILD SCREEN
          BZ    ACHECK
          MVC   AIDBYTE(1),INBUF
 *
+         DS    0H
 ACHECK   CLI   AIDBYTE,X'F3'       PF3=EXIT
          BE    EXITPGM
          CLI   AIDBYTE,X'FA'       PF10=SAVE
@@ -54,8 +56,8 @@ ACHECK   CLI   AIDBYTE,X'F3'       PF3=EXIT
          BE    DOENTER
          B     MAINLP
 *
-EXITPGM  DS    0H
-         L     13,SAVEARA+4
+         DS    0H
+EXITPGM  L     13,SAVEARA+4
          LM    14,12,12(13)
          XR    15,15
          BR    14
@@ -63,6 +65,7 @@ EXITPGM  DS    0H
 * ================================================================ *
 * DRAWSCN: BUILD THE 3270 DATA STREAM                             *
 * ================================================================ *
+         DS    0H
 DRAWSCN  ST    14,SDRAW
          LA    4,SCRBUF
          MVI   0(4),X'C3'          WCC (UNLOCK KB)
@@ -84,6 +87,7 @@ DRAWSCN  ST    14,SDRAW
 * DATA ROWS 3-20 (18 ROWS)
          LA    5,3                 SCREEN ROW COUNTER
          L     6,TOPREC            RECORD INDEX
+         DS    0H
 DRWLP    LA    15,POSTBL           SBA TABLE
          LR    1,5
          BCTR  1,0                 ROW-1
@@ -110,7 +114,9 @@ DRWLP    LA    15,POSTBL           SBA TABLE
          AR    8,1
          MVC   12(80,4),0(8)
          B     DRWNXT
+         DS    0H
 DRWBLK   MVC   12(80,4),BLANKS
+         DS    0H
 DRWNXT   LA    4,92(4)
          LA    5,1(5)
          LA    6,1(6)
@@ -124,11 +130,13 @@ DRWNXT   LA    4,92(4)
 * ================================================================ *
 * DOENTER: PARSE RETURNED SCREEN FIELDS                           *
 * ================================================================ *
+         DS    0H
 DOENTER  CH    2,=H'3'
          BL    MAINLP
          LA    3,INBUF+3           SKIP AID/CURSOR
          LR    9,2
          SH    9,=H'3'             REM LEN
+         DS    0H
 PRSLP    CH    9,=H'4'             NEED SBA+1 BYTE MIN
          BL    MAINLP
          CLI   0(3),X'11'          SBA?
@@ -147,6 +155,7 @@ PRSLP    CH    9,=H'4'             NEED SBA+1 BYTE MIN
 * MAP POS TO ROW
          SR    4,4
          LA    7,FPOSTBL
+         DS    0H
 PRFND    CH    4,=H'18'
          BNL   PRSKIP
          CLC   0(2,7),DBLWRK+2
@@ -154,6 +163,7 @@ PRFND    CH    4,=H'18'
          LA    7,2(7)
          LA    4,1(4)
          B     PRFND
+         DS    0H
 PRFOUND  A     4,TOPREC
          C     4,=F'50'
          BNL   PRSKIP
@@ -167,9 +177,11 @@ PRFOUND  A     4,TOPREC
          CH    6,=H'80'
          BNH   PRLNOK
          LA    6,80
+         DS    0H
 PRLNOK   LR    7,6
          SR    6,6
-PRSCN    CR    6,7
+         DS    0H
+PRSCN    CR    6,7                REACHED MAX?
          BNL   PRCPY
          LR    15,3
          AR    15,6
@@ -177,12 +189,14 @@ PRSCN    CR    6,7
          BE    PRCPY
          LA    6,1(6)
          B     PRSCN
+         DS    0H
 PRCPY    MVC   0(80,8),BLANKS
          LTR   6,6
          BZ    PRADV
          BCTR  6,0
          EX    6,PRMVC
          LA    6,1(6)
+         DS    0H
 PRADV    ALR   3,6
          SLR   9,6
 * UPDATE COUNT
@@ -191,8 +205,10 @@ PRADV    ALR   3,6
          BNH   PRSLP
          ST    4,RECCNT
          B     PRSLP
+         DS    0H
 PRSKIP   LA    3,3(3)
          SH    9,=H'3'
+         DS    0H
 PRSK2    CH    9,=H'1'
          BL    MAINLP
          CLI   0(3),X'11'
@@ -200,10 +216,13 @@ PRSK2    CH    9,=H'1'
          LA    3,1(3)
          BCT   9,PRSK2
          B     MAINLP
+         DS    0H
 PRMVC    MVC   0(0,8),0(3)
 *
+         DS    0H
 DECD6    LA    15,DCOTBL
          LA    7,0
+         DS    0H
 DCDLP    CH    7,=H'64'
          BNL   DCDDF
          CLM   5,1,0(15)
@@ -211,59 +230,79 @@ DCDLP    CH    7,=H'64'
          LA    15,1(15)
          LA    7,1(7)
          B     DCDLP
+         DS    0H
 DCDOK    LR    5,7
          BR    14
+         DS    0H
 DCDDF    SR    5,5
          BR    14
 *
+         DS    0H
 DOUP     L     15,TOPREC
          SH    15,=H'18'
          BP    UPOK
          SR    15,15
+         DS    0H
 UPOK     ST    15,TOPREC
          B     MAINLP
+         DS    0H
 DODN     L     15,TOPREC
          AH    15,=H'18'
          L     6,RECCNT
          C     15,6
          BNH   DNOK
          LR    15,6
+         DS    0H
 DNOK     ST    15,TOPREC
          B     MAINLP
+         DS    0H
 DOSAVE   ST    14,SSAVE
          MVC   STATMSG,SAVMSG
          OPEN  (OUTDCB,(OUTPUT))
+         DS    0H
          TM    OUTDCB+48,X'10'
          BZ    SFAIL
          LA    7,RECS
          L     8,RECCNT
          LTR   8,8
          BZ    SCLO
+         DS    0H
 SLP      PUT   OUTDCB,0(7)
          LA    7,80(7)
          BCT   8,SLP
+         DS    0H
 SCLO     CLOSE (OUTDCB)
+         DS    0H
          MVC   STATMSG,SVDMSG
          B     SDN
+         DS    0H
 SFAIL    MVC   STATMSG,SERMSG
+         DS    0H
 SDN      L     14,SSAVE
          BR    14
+         DS    0H
 LOADP    ST    14,SLOAD
          OPEN  (INDCB,(INPUT))
+         DS    0H
          TM    INDCB+48,X'10'
          BZ    LNF
          LA    7,RECS
          SR    8,8
+         DS    0H
 LLP      GET   INDCB,0(7)
          LA    7,80(7)
          LA    8,1(8)
          CH    8,=H'50'
          BL    LLP
+         DS    0H
 LEO      CLOSE (INDCB)
+         DS    0H
          ST    8,RECCNT
          B     LOK
+         DS    0H
 LNF      SR    8,8
          ST    8,RECCNT
+         DS    0H
 LOK      MVC   STATMSG,LDMSG
          L     14,SLOAD
          BR    14
@@ -276,6 +315,7 @@ RECCNT   DC    F'0'
 TOPREC   DC    F'0'
 DBLWRK   DC    D'0'
 AIDBYTE  DC    X'00'
+         DS    0D
 CURPTR   DC    F'0'
 SDRAW    DC    F'0'
 SSAVE    DC    F'0'
