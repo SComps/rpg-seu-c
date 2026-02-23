@@ -114,11 +114,21 @@ LLOOPP   GET   INDCB,0(7)
          BL    LLOOPP
 LEOF     CLOSE (INDCB)
          ST    8,RECCNT
-         MVC   STATMSG,LDMSG
+         LTR   8,8
+         BNZ   LLDMSG
+         MVC   STATMSG,NEWMSG      EMPTY MEMBER = NEW
+         B     LRTN
+LLDMSG   MVC   STATMSG,LDMSG
          B     LRTN
 LNEW     SR    8,8
          ST    8,RECCNT
-         MVC   STATMSG,NEWMSG
+         MVC   STATMSG,NEWMSG      NEW FILE
+         LA    0,RECS              DEST ADDR
+         L     1,=F'4000'          DEST LENGTH
+         LA    2,0                 SRC ADDR (UNUSED)
+         LA    3,0                 SRC LENGTH = 0
+         ICM   3,8,=X'40'          PAD BYTE = SPACE
+         MVCL  0,2                 FILL RECS WITH SPACES
 LRTN     L     14,SLOAD
          BR    14
 SLOAD    DS    F
