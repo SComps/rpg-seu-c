@@ -22,6 +22,8 @@ SEU      CSECT
          BAL   11,PARSECP          EXTRACT DSN FROM CBUF
          LTR   15,15               DSN FOUND?
          BNZ   PARAMERR            NO, SHOW USAGE
+* DEBUG: DISPLAY PARSED DSN
+         TPUT  TUNAMDSN,44
 *
          BAL   11,ALLOCDS          DYNALLOC DSN (SVC 99)
          LTR   15,15
@@ -60,11 +62,10 @@ PARAMERR DS    0H
          B     TERMINAT
 *
 ALLOCERR DS    0H
-         CLC   S99ERROR(2),=X'0210'
-         BNE   AERRGEN
-         TPUT  ERRDSN,20
-         B     TERMINAT
-AERRGEN  UNPK  ERRDISP(5),S99ERROR(3)
+         STH   15,DBLWRK           SAVE RC
+         MVC   DBLWRK+2(2),S99ERROR
+         MVI   DBLWRK+4,X'0F'
+         UNPK  ERRDISP(5),DBLWRK+2(3)
          TR    ERRDISP(4),HEXTAB-240
          TPUT  ERRMSG1,15
          TPUT  ERRDISP,4
@@ -222,59 +223,40 @@ PARSECP  L     3,CPPLCBUF          GET BUFFER
          SR    4,15                PARAM LEN
          BNP   PARSERR             NO PARAMS
          LA    5,0(3,15)           START ADDR
-* SKIP LEADING SPACES
-PSKIP    CLI   0(5),X'40'
-         BNE   PSTART
-         LA    5,1(5)
+* SKIP LEADING SPACES AND QUOTES
+PSKIP    CLI   0(5),X'40'          SPACE?
+         BE    PNEXT
+         CLI   0(5),X'7D'          QUOTE?
+         BNE   PFNDST
+PNEXT    LA    5,1(5)
          BCT   4,PSKIP
          B     PARSERR
-* CHECK FOR QUOTE
-PSTART   CLI   0(5),X'7D'          QUOTE?
-         BNE   PNQ                 NO QUOTE
-         LA    5,1(5)              SKIP LEADING QUOTE
-         BCTR  4,0                 DEC LEN
-         STH   4,DSNLEN
-* SCAN FOR TRAILING QUOTE
-         LTR   4,4
-         BZ    PARSERR
-         LR    6,5                 SCAN PTR
-         LR    7,4                 SCAN COUNT
-PSCAN    CLI   0(6),X'7D'          QUOTE?
-         BE    PFNDQ
-         LA    6,1(6)
-         BCT   7,PSCAN
-* NO TRAILING QUOTE, JUST USE WHAT'S THERE
-         B     PCOPY
-PFNDQ    LR    4,6
-         SR    4,5                 LENGTH TO QUOTE
-         B     PCOPY
-* NO QUOTES - SCAN FOR FIRST SPACE OR END
-PNQ      LR    6,5
-         LR    7,4
-PNQSLOP  CLI   0(6),X'40'
-         BE    PNQFND
-         LA    6,1(6)
-         BCT   7,PNQSLOP
-         B     PCOPY               USE FULL LEN
-PNQFND   LR    4,6
-         SR    4,5                 LENGTH TO SPACE
-PCOPY    DS    0H
+PFNDST   LR    8,5                 START OF DSN
+         LR    9,4                 REMAINING LEN
+* SCAN FOR END (SPACE OR QUOTE)
+PSCAN    CLI   0(5),X'40'          SPACE?
+         BE    PFNDED
+         CLI   0(5),X'7D'          QUOTE?
+         BE    PFNDED
+         LA    5,1(5)
+         BCT   4,PSCAN
+PFNDED   LR    4,5
+         SR    4,8                 CALC LEN
          STH   4,DSNLEN
          LTR   4,4
          BZ    PARSERR
-         CH    4,=H'44'
-         BNH   PLENOK
-         LA    4,44
-PLENOK   STH   4,DSNLEN
          BCTR  4,0
          MVI   TUNAMDSN,X'40'
          MVC   TUNAMDSN+1(43),TUNAMDSN
-         EX    4,MVCDSN
+         CH    4,=H'43'
+         BNH   PLENOK
+         LH    4,=H'43'
+PLENOK   EX    4,MVCDSN
          SR    15,15
          BR    11
 PARSERR  LA    15,8
          BR    11
-MVCDSN   MVC   TUNAMDSN(0),0(5)
+MVCDSN   MVC   TUNAMDSN(0),0(8)
 *
 ALLOCDS  DS    0H
          MVI   S99VERB,X'01'       ALLOC
