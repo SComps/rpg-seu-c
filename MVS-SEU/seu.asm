@@ -19,10 +19,15 @@ SEU      CSECT
 * ------------------------------------------------------------------- *
          LR    2,1                 SAVE CPPL ADDR
          USING CPPL,2
+         L     3,CPPLCBUF          GET CBUF
+* DEBUG: DISPLAY ENTIRE CBUF
+         TPUT  0(3),72
+*
          BAL   11,PARSECP          EXTRACT DSN FROM CBUF
          LTR   15,15               DSN FOUND?
          BNZ   PARAMERR            NO, SHOW USAGE
-* DEBUG: DISPLAY PARSED DSN
+* DEBUG: DISPLAY PARSED DSN WITH PREFIX
+         TPUT  DSNPRFX,10
          TPUT  TUNAMDSN,44
 *
          BAL   11,ALLOCDS          DYNALLOC DSN (SVC 99)
@@ -62,13 +67,13 @@ PARAMERR DS    0H
          B     TERMINAT
 *
 ALLOCERR DS    0H
-         STH   15,DBLWRK           SAVE RC
-         MVC   DBLWRK+2(2),S99ERROR
-         MVI   DBLWRK+4,X'0F'
-         UNPK  ERRDISP(5),DBLWRK+2(3)
-         TR    ERRDISP(4),HEXTAB-240
+         ST    15,DBLWRK           STORE RC
+         MVC   DBLWRK+4(2),S99ERROR
+         MVI   DBLWRK+6,X'0F'
+         UNPK  ERRDISP(9),DBLWRK+3(5)
+         TR    ERRDISP(8),HEXTAB-240
          TPUT  ERRMSG1,15
-         TPUT  ERRDISP,4
+         TPUT  ERRDISP,8
          B     TERMINAT
 *
 * ------------------------------------------------------------------- *
@@ -344,9 +349,10 @@ STATMSG  DC    CL30'LOADED'
 NEWMSG   DC    CL30'NEW MEMBER'
 SVOKMSG  DC    CL30'SAVE COMPLETE'
 SVERMSG  DC    CL30'SAVE FAILED'
-ERRMSG1  DC    CL15'ALLOC ERROR: '
+ERRMSG1  DC    CL15'ALLOC ERR RC/E:'
 ERRDSN   DC    CL20'DATASET NOT FOUND'
-ERRDISP  DC    CL4' '
+ERRDISP  DC    CL8' '
+DSNPRFX  DC    CL10'DSN IS:   '
 USAGE    DC    CL36'USAGE: SEU ''DATASET.NAME(MEMBER)'''
 HEXTAB   DC    C'0123456789ABCDEF'
 *
