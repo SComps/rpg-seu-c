@@ -20,6 +20,8 @@ SEU      CSECT
          LR    2,1                 SAVE CPPL ADDR
          USING CPPL,2
          BAL   11,PARSECP          EXTRACT DSN FROM CBUF
+         LTR   15,15               DSN FOUND?
+         BNZ   PARAMERR            NO, SHOW USAGE
 *
          BAL   11,ALLOCDS          DYNALLOC DSN (SVC 99)
          LTR   15,15
@@ -53,8 +55,15 @@ TERMINAT DS    0H
 * ------------------------------------------------------------------- *
 * ERROR HANDLING
 * ------------------------------------------------------------------- *
+PARAMERR DS    0H
+         TPUT  USAGE,36
+         B     TERMINAT
+*
 ALLOCERR DS    0H
-         TPUT  ERRMSG1,11
+         UNPK  ERRDISP(5),S99ERROR(3)
+         TR    ERRDISP(4),HEXTAB-240
+         TPUT  ERRMSG1,15
+         TPUT  ERRDISP,4
          B     TERMINAT
 *
 * ------------------------------------------------------------------- *
@@ -204,16 +213,34 @@ MOVREC   MVC   0(1,7),0(8)
 * ------------------------------------------------------------------- *
 PARSECP  L     3,CPPLCBUF          EXTRACT DSN
          USING CBUF,3
-         LH    4,CBUFPL
-         LA    5,CBUFDATA(4)
-         MVC   DSNWORK(44),0(5)    SIMPLIFIED EXTRACT
+         LH    4,CBUFLL
+         LH    15,CBUFPL
+         SR    4,15                PARAM LEN
+         BZ    PARSERR             NO PARAMS
+         LA    5,CBUFDATA(15)      ADDR OF PARAMS
+*        LOOP TO FIND START (SKIP SPACES)
+PS_SKIP  CLI   0(5),X'40'
+         BNE   PS_FOUND
+         LA    5,1(5)
+         BCT   4,PS_SKIP
+         B     PARSERR
+PS_FOUND STH   4,DSNLEN
+         BCTR  4,0                 FOR EX
+         EX    4,MVCDSN
+         LA    15,0
          BR    11
+PARSERR  LA    15,8
+         BR    11
+MVCDSN   MVC   DSNWORK(0),0(5)
 *
 ALLOCDS  DS    0H
          MVI   S99VERB,X'01'       ALLOC
          LA    1,S99TXTPP          TXTPTR
          ST    1,S99RBPTR
          OI    S99RBPTR,X'80'
+*        SET ACTUAL DSN LEN IN TU
+         MVC   TUNAMLEN,DSNLEN
+         LA    1,S99RBPTR
          SVC   99
          BR    11
 *
@@ -280,11 +307,15 @@ ROWPOS   DC    CL2' '
 DLINNUM  DC    CL5' '
 CURPTR   DC    F'0'
 DSNWORK  DC    CL44' '
+DSNLEN   DC    H'0'
 HDRTXT   DC    CL26'SEU Editor (IFOX/MVS)'
 STATMSG  DC    CL30'LOADED'
 SVOKMSG  DC    CL30'SAVE COMPLETE'
 SVERMSG  DC    CL30'SAVE FAILED'
-ERRMSG1  DC    CL30'ALLOC ERROR'
+ERRMSG1  DC    CL15'ALLOC ERROR: '
+ERRDISP  DC    CL4' '
+USAGE    DC    CL36'USAGE: SEU ''DATASET.NAME(MEMBER)'''
+HEXTAB   DC    C'0123456789ABCDEF'
 *
 AIDPF3   EQU   X'F3'
 AIDPF7   EQU   X'F7'
@@ -306,8 +337,19 @@ OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
 S99RBPTR DS    F
 S99TXTPP DC    A(S99TUPL)          TU POINTERS
 S99VERB  DC    X'01'               VERB
+S99RBLOCK DS   0H
+         DC    AL1(20)             RBLEN
+         DC    AL1(1)              VERB
+S99FLAG1 DS    H
+S99ERROR DS    H
+S99INFO  DS    H
+S99TXTP2 DC    A(S99TUPL)
+         DS    2F
+*
 S99TUPL  DC    A(TUNAM),A(TUDDN),X'80',AL3(TUSTA)
-TUNAM    DC    X'0001',H'1',H'44',CL44' '
+TUNAM    DC    X'0001',H'1'
+TUNAMLEN DC    H'44'
+         DC    CL44' '
 TUDDN    DC    X'0002',H'1',H'8',CL8'SYSASMEU'
 TUSTA    DC    X'0004',H'1',H'1',X'08'
 *
@@ -318,7 +360,7 @@ RECS     DS    100CL80
 CPPL     DSECT
 CPPLCBUF DS    A
 CBUF     DSECT
-CBUFLL   DS    H
+CBUFLEN  DS    H
 CBUFPL   DS    H
 CBUFDATA DS    C
 *
