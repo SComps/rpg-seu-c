@@ -19,6 +19,7 @@ SEU      CSECT
          LR    13,15
 *
          BAL   14,LOADP            READ DATASET INTO RECS
+         TPUT  STATMSG,30          SHOW LOADED/NEW STATUS
 *
 * ================================================================ *
 * MAIN EVENT LOOP                                                  *
@@ -26,15 +27,15 @@ SEU      CSECT
 MAINLP   BAL   14,DRAWSCN          BUILD SCREEN BUFFER
          L     1,CURPTR
          LA    0,SCRBUF
-         SR    1,0                 BUFFER LENGTH
-         LR    0,1                 R0 = LEN FOR SVC 93
-         TPUT  SCRBUF,(0),FULLSCR  DISPLAY FULL SCREEN
-*
-         TGET  INBUF,512,ASIS      READ TERMINAL INPUT
-         MVI   AIDBYTE,X'7D'       DEFAULT: NO KEY
-         LTR   1,1
+         SR    1,0                 BUFFER LENGTH IN R1
+         LR    0,1                 COPY TO R0 FOR SVC
+         TPUT  SCRBUF,(0),FULLSCR  DISPLAY
+         TGET  INBUF,512,ASIS      READ AID KEY (BLOCKS UNTIL KEY)
+         LR    2,1                 SAVE BYTE COUNT
+         MVI   AIDBYTE,X'7D'       DEFAULT = ENTER
+         LTR   2,2
          BZ    ACHECK
-         MVC   AIDBYTE(1),INBUF    CAPTURE AID BYTE
+         MVC   AIDBYTE(1),INBUF    AID BYTE FROM DATA STREAM
 *
 ACHECK   CLI   AIDBYTE,X'F3'       PF3 = EXIT
          BE    EXITPGM
