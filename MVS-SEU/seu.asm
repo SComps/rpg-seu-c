@@ -5,8 +5,8 @@ SEU      CSECT
          STM   14,12,12(13)
          BALR  12,0
          USING *,12,11
-         LA    11,4095(12)         SECOND BASE REGISTER
-         LA    11,1(11)
+         L     11,=A(DATAREAS)     POINT TO DATA AREA
+         USING DATAREAS,11
 *
          ST    13,SAVEARA+4
          LA    15,SAVEARA
@@ -22,6 +22,10 @@ SEU      CSECT
          MVCL  0,2
 *
          BAL   14,LOADP            LOAD DATASET
+*
+* ENTER TSO FULLSCREEN MODE - ATTEMPT TO SILENCE ABEND
+* IF STFSMODE FAILS, WE WILL CONTINUE AND HOPE TPUT WORKS
+         BAL   14,SETMODE
 *
 * ================================================================ *
 * MAIN LOOP                                                       *
@@ -52,7 +56,8 @@ ACHECK   CLI   AIDBYTE,X'F3'       PF3=EXIT
          BE    DOENTER
          B     MAINLP
 *
-EXITPGM  L     13,SAVEARA+4
+EXITPGM  DS    0H
+         L     13,SAVEARA+4
          LM    14,12,12(13)
          XR    15,15
          BR    14
@@ -117,7 +122,6 @@ DRWNXT   LA    4,92(4)
          ST    4,CURPTR
          L     14,SDRAW
          BR    14
-SDRAW    DS    F
 *
 * ================================================================ *
 * DOENTER: PARSE RETURNED SCREEN FIELDS                           *
@@ -214,9 +218,8 @@ DCDOK    LR    5,7
 DCDDF    SR    5,5
          BR    14
 *
-* ================================================================ *
-* SCROLL / SAVE / LOAD                                            *
-* ================================================================ *
+SETMODE  BR    14                  STFSMODE REMOVED CAUSES S806
+*
 DOUP     L     15,TOPREC
          SH    15,=H'18'
          BP    UPOK
@@ -249,7 +252,6 @@ SCLO     CLOSE (OUTDCB)
 SFAIL    MVC   STATMSG,SERMSG
 SDN      L     14,SSAVE
          BR    14
-SSAVE    DS    F
 LOADP    ST    14,SLOAD
          OPEN  (INDCB,(INPUT))
          TM    INDCB+48,X'10'
@@ -269,17 +271,20 @@ LNF      SR    8,8
 LOK      MVC   STATMSG,LDMSG
          L     14,SLOAD
          BR    14
-SLOAD    DS    F
 *
-* ================================================================ *
-* DATA                                                            *
-* ================================================================ *
+         LTORG
+*
+         DS    0F
+DATAREAS EQU   *
 SAVEARA  DC    18F'0'
 RECCNT   DC    F'0'
 TOPREC   DC    F'0'
 DBLWRK   DC    D'0'
 AIDBYTE  DC    X'00'
 CURPTR   DC    F'0'
+SDRAW    DC    F'0'
+SSAVE    DC    F'0'
+SLOAD    DC    F'0'
 LINUM    DC    CL5' '
 BLANKS   DC    CL80' '
 STATMSG  DC    CL30'READY'
@@ -288,7 +293,6 @@ LDMSG    DC    CL30'DATA LOADED'
 SAVMSG   DC    CL30'SAVING...'
 SVDMSG   DC    CL30'SAVED OK'
 SERMSG   DC    CL30'SAVE FAILED'
-*
 POSTBL   DC    X'4040',X'C150',X'C260',X'C3F0',X'C540',X'C650',X'C760'
          DC    X'C8F0',X'4A40',X'4B50',X'4C60',X'4DF0',X'4F40',X'5050'
          DC    X'D160',X'D2F0',X'D440',X'D550',X'D660',X'D7F0'
@@ -300,11 +304,11 @@ DCOTBL   DC    X'40C1C2C3C4C5C6C7C8C94A4B4C4D4E4F'
          DC    X'60E1E2E3E4E5E6E7E8E96A6B6C6D6E6F'
          DC    X'F0F1F2F3F4F5F6F7F8F97A7B7C7D7E7F'
 *
+         DS    0F
 INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(GM),RECFM=FB,LRECL=80,  X
                EODAD=LEO
 OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
 *
-         LTORG
 SCRBUF   DS    CL3000
 INBUF    DS    CL512
 RECS     DS    50CL80
