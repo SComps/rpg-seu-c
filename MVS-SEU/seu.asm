@@ -4,9 +4,11 @@ SEU      CSECT
 * ================================================================ *
          STM   14,12,12(13)
          BALR  12,0
-         USING *,12,11
-         L     11,=A(DATAREAS)     POINT TO DATA AREA
-         USING DATAREAS,11
+         USING *,12,11,10          ESTABLISH 12K ADDRESSABILITY
+         LA    11,2048(12)         R11 = BASE + 4KB
+         LA    11,2048(11)
+         LA    10,2048(11)         R10 = BASE + 8KB
+         LA    10,2048(10)
 *
          ST    13,SAVEARA+4
          LA    15,SAVEARA
@@ -22,10 +24,6 @@ SEU      CSECT
          MVCL  0,2
 *
          BAL   14,LOADP            LOAD DATASET
-*
-* ENTER TSO FULLSCREEN MODE - ATTEMPT TO SILENCE ABEND
-* IF STFSMODE FAILS, WE WILL CONTINUE AND HOPE TPUT WORKS
-         BAL   14,SETMODE
 *
 * ================================================================ *
 * MAIN LOOP                                                       *
@@ -218,8 +216,6 @@ DCDOK    LR    5,7
 DCDDF    SR    5,5
          BR    14
 *
-SETMODE  BR    14                  STFSMODE REMOVED CAUSES S806
-*
 DOUP     L     15,TOPREC
          SH    15,=H'18'
          BP    UPOK
@@ -274,8 +270,7 @@ LOK      MVC   STATMSG,LDMSG
 *
          LTORG
 *
-         DS    0F
-DATAREAS EQU   *
+         DS    0D
 SAVEARA  DC    18F'0'
 RECCNT   DC    F'0'
 TOPREC   DC    F'0'
@@ -304,7 +299,7 @@ DCOTBL   DC    X'40C1C2C3C4C5C6C7C8C94A4B4C4D4E4F'
          DC    X'60E1E2E3E4E5E6E7E8E96A6B6C6D6E6F'
          DC    X'F0F1F2F3F4F5F6F7F8F97A7B7C7D7E7F'
 *
-         DS    0F
+         DS    0D
 INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(GM),RECFM=FB,LRECL=80,  X
                EODAD=LEO
 OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
