@@ -1,7 +1,9 @@
 SEU      CSECT
          STM   14,12,12(13)        SAVE REGISTERS
          BALR  12,0                ADDRESSABILITY
-         USING *,12                PRIMARY BASE (4KB)
+         USING *,12,11             DUAL BASE REGISTERS (8KB)
+         LA    11,2048(12)         OFFSET 4096 (2X 2048)
+         LA    11,2048(11)
 *
          ST    13,SAVEAREA+4       SAVEAREA CHAINING
          LA    15,SAVEAREA
@@ -114,9 +116,9 @@ PLENOK   STH   4,DSNLEN
          MVC   TUNAMDSN+1(43),TUNAMDSN
          EX    4,MVCDSN
          SR    15,15
-         B     PRTN
+         B     PARSRTN
 PERR     LA    15,8
-PRTN     L     14,SPARSE
+PARSRTN  L     14,SPARSE
          BR    14
 MVCDSN   MVC   TUNAMDSN(0),0(8)
 SPARSE   DS    F
@@ -233,20 +235,20 @@ PROCINP  ST    14,SPROC
          CLI   AIDBYTE,AIDPF8      DOWN
          BE    PDN
 * (Input field logic would go here if needed)
-         B     PRTN
+         B     PROCRTN
 PUP      L     15,TOPREC
          S     15,=F'18'
          BP    PUPOK
          L     15,=F'0'
 PUPOK    ST    15,TOPREC
-         B     PRTN
+         B     PROCRTN
 PDN      L     15,TOPREC
          A     15,=F'18'
          CH    15,=H'82'
          BL    PDNOK
          L     15,=F'82'
 PDNOK    ST    15,TOPREC
-PRTN     L     14,SPROC
+PROCRTN  L     14,SPROC
          BR    14
 SPROC    DS    F
 *
