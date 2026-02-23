@@ -1,13 +1,7 @@
 SEU      CSECT
          STM   14,12,12(13)        SAVE REGISTERS
          BALR  12,0                ADDRESSABILITY
-         USING *,12,11,10,9        FOUR BASE REGISTERS
-         LA    11,2048(12)         OFFSET 4096 (2X 2048)
-         LA    11,2048(11)
-         LA    10,2048(11)         OFFSET 8192
-         LA    10,2048(10)
-         LA    9,2048(10)          OFFSET 12288
-         LA    9,2048(9)
+         USING *,12                PRIMARY BASE (4KB)
 *
          ST    13,SAVEAREA+4       SAVEAREA CHAINING
          LA    15,SAVEAREA
@@ -15,18 +9,285 @@ SEU      CSECT
          LR    13,15
 *
 * ------------------------------------------------------------------- *
-* DATA AREAS (TOP-LOADED FOR ADDRESSABILITY)
+* INITIALIZATION & DATASET ALLOCATION
 * ------------------------------------------------------------------- *
-         B     DATAEND             SKIP DATA
+         LR    2,1                 SAVE CPPL ADDR
+         USING CPPL,2
+         L     3,CPPLCBUF          GET CBUF
+         TPUT  0(3),72             DEBUG: SHOW CBUF
+*
+         BAL   14,PARSECP          EXTRACT DSN
+         LTR   15,15
+         BNZ   PARAMERR
+*
+         MVC   DEBUGBUF(10),DSNPRFX
+         MVI   DEBUGBUF+10,C'['
+         MVC   DEBUGBUF+11(44),TUNAMDSN
+         MVI   DEBUGBUF+55,C']'
+         TPUT  DEBUGBUF,56         DEBUG: SHOW DSN
+*
+         BAL   14,ALLOCDS          SVC 99 ALLOC
+         LTR   15,15
+         BNZ   ALLOCERR
+*
+         BAL   14,LOADP            QSAM LOAD
+*
+* ------------------------------------------------------------------- *
+* MAIN EVENT LOOP
+* ------------------------------------------------------------------- *
+MAINLOOP DS    0H
+         BAL   14,DRAWSCN          BUILD 3270 BUFFER
+         BAL   14,DOTPUT           TPUT FULLSCREEN
+         BAL   14,DOTGET           TGET USER INPUT
+*
+         BAL   14,PROCINP          PROCESS INPUT
+         CLI   AIDBYTE,AIDPF3      EXIT?
+         BE    TERMINAT
+         CLI   AIDBYTE,AIDPF10     SAVE?
+         BE    SAVEP
+*
+         B     MAINLOOP            LOOP
+*
+TERMINAT DS    0H
+         BAL   14,FREEDS           UNALLOCATE
+         L     13,SAVEAREA+4
+         LM    14,12,12(13)
+         XR    15,15
+         BR    14
+*
+* ------------------------------------------------------------------- *
+* ERROR HANDLING
+* ------------------------------------------------------------------- *
+PARAMERR DS    0H
+         TPUT  USAGE,36
+         B     TERMINAT
+*
+ALLOCERR DS    0H
+         ST    15,DBLWRK           RC
+         MVC   DBLWRK+4(2),S99ERROR ERRCODE
+         MVI   DBLWRK+6,X'0F'
+         UNPK  ERRDISP(9),DBLWRK+3(5)
+         TR    ERRDISP(8),HEXTAB-240
+         TPUT  ERRMSG1,15
+         TPUT  ERRDISP,8
+         B     TERMINAT
+*
+* ------------------------------------------------------------------- *
+* SUBROUTINE: PARSECP - SIMPLE SCANNER
+* ------------------------------------------------------------------- *
+PARSECP  ST    14,S_PARSE
+         L     3,CPPLCBUF
+         USING CBUF,3
+         LH    4,CBUFLEN
+         LH    15,CBUFPL
+         SR    4,15                PARAM LEN
+         BNP   PERR
+         LA    5,0(3,15)           START ADDR
+* SKIP BLANKS/QUOTES
+PSKIP    CLI   0(5),X'40'
+         BE    PNEXT
+         CLI   0(5),X'7D'          QUOTE
+         BE    PNEXT
+         B     PFOUND
+PNEXT    LA    5,1(5)
+         BCT   4,PSKIP
+         B     PERR
+PFOUND   LR    8,5                 DSN START
+* SCAN FOR END (BLANK OR QUOTE)
+PSCAN    CLI   0(5),X'40'
+         BE    PEND
+         CLI   0(5),X'7D'
+         BE    PEND
+         LA    5,1(5)
+         BCT   4,PSCAN
+PEND     LR    4,5
+         SR    4,8                 CALC LEN
+         STH   4,DSNLEN
+         LTR   4,4
+         BZ    PERR
+         CH    4,=H'44'
+         BNH   PLENOK
+         LH    4,=H'44'
+PLENOK   STH   4,DSNLEN
+         BCTR  4,0
+         MVI   TUNAMDSN,X'40'
+         MVC   TUNAMDSN+1(43),TUNAMDSN
+         EX    4,MVC_DSN
+         SR    15,15
+         B     PRTN
+PERR     LA    15,8
+PRTN     L     14,S_PARSE
+         BR    14
+MVC_DSN  MVC   TUNAMDSN(0),0(8)
+S_PARSE  DS    F
+*
+* ------------------------------------------------------------------- *
+* SUBROUTINE: ALLOCDS - SVC 99
+* ------------------------------------------------------------------- *
+ALLOCDS  ST    14,S_ALLOC
+         MVI   S99VERB,X'01'
+         MVC   TUNAMLEN,DSNLEN
+         LA    1,S99RB
+         ST    1,S99RBP
+         OI    S99RBP,X'80'
+         LA    1,S99RBP
+         SVC   99
+         LR    15,15
+         L     14,S_ALLOC
+         BR    14
+S_ALLOC  DS    F
+*
+* ------------------------------------------------------------------- *
+* SUBROUTINE: LOADP - QSAM READ
+* ------------------------------------------------------------------- *
+LOADP    ST    14,S_LOAD
+         OPEN  (INDCB,(INPUT))
+         TM    INDCB+48,X'10'
+         BZ    L_NEW
+         LA    7,RECS
+         SR    8,8
+L_LOOP   GET   INDCB,0(7)
+         LA    7,80(7)
+         LA    8,1(8)
+         CH    8,=H'100'
+         BL    L_LOOP
+L_EOF    CLOSE (INDCB)
+         ST    8,RECCNT
+         B     L_RTN
+L_NEW    SR    8,8
+         ST    8,RECCNT
+         MVC   STATMSG,NEWMSG
+L_RTN    L     14,S_LOAD
+         BR    14
+S_LOAD   DS    F
+*
+* ------------------------------------------------------------------- *
+* SUBROUTINE: DRAWSCN - RENDER
+* ------------------------------------------------------------------- *
+DRAWSCN  ST    14,S_DRAW
+         LA    4,DATSTR            BUFFER
+         MVI   0(4),X'11'          SBA
+         MVC   1(2,4),POS0101
+         MVI   3(4),X'1D'          SF
+         MVI   4(4),X'E8'          PROT/HIGH
+         MVC   5(26,4),HDRTXT
+         LA    4,31(4)
+* STATUS
+         MVI   0(4),X'11'          SBA
+         MVC   1(2,4),POS2401
+         MVI   3(4),X'1D'          SF
+         MVI   4(4),X'E8'          PROT/HIGH
+         MVC   5(30,4),STATMSG
+         LA    4,35(4)
+* RECORDS (ROW 3-20)
+         LA    5,3                 ROW
+         L     6,TOPREC            INDEX
+D_LOOP   DS    0H
+         MVI   0(4),X'11'          SBA
+         BAL   14,GETROW           NESTED CALL
+         MVC   1(2,4),ROWPOS
+         MVI   3(4),X'1D'          SF
+         MVI   4(4),X'60'          PROT
+         LA    7,1(6)              LINE#
+         CVD   7,DBLWRK
+         UNPK  DLINNUM,DBLWRK+5(3)
+         OI    DLINNUM+4,X'F0'
+         MVC   5(5,4),DLINNUM
+         MVI   10(4),X'1D'         SF (UNPROT)
+         MVI   11(4),X'40'
+         LA    8,RECS
+         LR    15,6
+         MH    15,H80
+         AR    8,15
+         MVC   12(80,4),0(8)
+         LA    4,92(4)
+         LA    5,1(5)
+         LA    6,1(6)
+         CH    5,=H'21'
+         BL    D_LOOP
+         ST    4,CURPTR
+         L     14,S_DRAW
+         BR    14
+S_DRAW   DS    F
+*
+* ------------------------------------------------------------------- *
+* SUBROUTINE: DOTGET / DOTPUT / PROCINP (SIMPLIFIED)
+* ------------------------------------------------------------------- *
+DOTPUT   L     1,CURPTR
+         LA    0,DATSTR
+         SR    1,0
+         TPUT  DATSTR,(0),FULLSCR
+         BR    14
+*
+DOTGET   TGET  INBUF,512,ASIS
+         STH   1,INBUFLEN
+         MVI   AIDBYTE,X'7D'
+         LTR   1,1
+         BZ    G_RTN
+         MVC   AIDBYTE(1),INBUF
+G_RTN    BR    14
+*
+PROCINP  ST    14,S_PROC
+         CLI   AIDBYTE,AIDPF7      UP
+         BE    P_UP
+         CLI   AIDBYTE,AIDPF8      DOWN
+         BE    P_DN
+* (Input field logic would go here if needed)
+         B     P_RTN
+P_UP     L     15,TOPREC
+         S     15,=F'18'
+         BP    P_UPOK
+         L     15,=F'0'
+P_UPOK   ST    15,TOPREC
+         B     P_RTN
+P_DN     L     15,TOPREC
+         A     15,=F'18'
+         CH    15,=H'82'
+         BL    P_DNOK
+         L     15,=F'82'
+P_DNOK   ST    15,TOPREC
+P_RTN    L     14,S_PROC
+         BR    14
+S_PROC   DS    F
+*
+SAVEP    ST    14,S_SAVE
+         OPEN  (OUTDCB,(OUTPUT))
+         TM    OUTDCB+48,X'10'
+         BZ    S_FAIL
+         LA    7,RECS
+         L     8,RECCNT
+S_LOOP2  PUT   OUTDCB,0(7)
+         LA    7,80(7)
+         BCT   8,S_LOOP2
+         CLOSE (OUTDCB)
+         MVC   STATMSG,SVOKMSG
+         B     S_RTN
+S_FAIL   MVC   STATMSG,SVERMSG
+S_RTN    L     14,S_SAVE
+         BR    14
+S_SAVE   DS    F
+*
+FREEDS   MVI   S99VERB,X'02'
+         SVC   99
+         BR    14
+*
+GETROW   LA    15,POSTBL
+         LR    1,5
+         SLL   1,1
+         AR    15,1
+         MVC   ROWPOS(2),0(15)
+         BR    14
+*
+* ------------------------------------------------------------------- *
+* CONTROL BLOCKS & SMALL VARIABLES
+* ------------------------------------------------------------------- *
 SAVEAREA DC    18F'0'
 RECCNT   DC    F'0'
 TOPREC   DC    F'0'
 H80      DC    H'80'
-H80L     DC    F'80'
 DBLWRK   DC    D'0'
 AIDBYTE  DC    X'00'
 INBUFLEN DC    H'0'
-FIELDADR DC    CL2' '
 ROWPOS   DC    CL2' '
 DLINNUM  DC    CL5' '
 CURPTR   DC    F'0'
@@ -37,7 +298,6 @@ NEWMSG   DC    CL30'NEW MEMBER'
 SVOKMSG  DC    CL30'SAVE COMPLETE'
 SVERMSG  DC    CL30'SAVE FAILED'
 ERRMSG1  DC    CL15'ALLOC ERR RC/E:'
-ERRDSN   DC    CL20'DATASET NOT FOUND'
 ERRDISP  DC    CL8' '
 DSNPRFX  DC    CL10'DSN IS:   '
 DEBUGBUF DC    CL64' '
@@ -54,346 +314,33 @@ POS2401  DC    X'5C20'
 POSTBL   DC    X'4040',X'4040',X'C150',X'C260',X'C3F0',X'C540',X'C650',X
                X'C760',X'C8F0',X'4A40',X'4B50',X'4C60',X'4DF0',X'4F40',X
                X'5050',X'D160',X'D2F0',X'D440',X'D550',X'D660',X'D7F0'
+*
+INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(GM),RECFM=FB,LRECL=80,  X
+               EODAD=L_EOF
+OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
+*
 S99RBP   DS    F
 S99RB    DS    0F
-         DC    AL1(20)             RBLEN
-S99VERB  DC    AL1(1)              VERB
-S99FLAG1 DC    H'0'
-S99ERROR DC    H'0'
-S99INFO  DC    H'0'
-S99TXTP2 DC    A(S99TUPL)
-         DC    F'0',F'0'           FLAG2, RSVD
-         DS    0F
+         DC    AL1(20)
+         DC    AL1(1)              VERB
+         DC    H'0',H'0',H'0'
+         DC    A(S99TUPL)
+         DC    F'0',F'0'
 S99TUPL  DC    A(TUNAM)
          DC    A(TUDDN)
          DC    X'80',AL3(TUSTA)
-         DS    0H
-TUNAM    DC    X'0001',H'1'
-TUNAMLEN DC    H'0'
+TUNAM    DC    X'0001',H'1',H'0'
 TUNAMDSN DC    CL44' '
 TUDDN    DC    X'0002',H'1',X'0008',CL8'SYSASMEU'
 TUSTA    DC    X'0004',H'1',X'0001',X'08'
-DATAEND  DS    0H
 *
 * ------------------------------------------------------------------- *
-* INITIALIZATION & DATASET ALLOCATION
+* LARGE BUFFERS (END OF CSECT)
 * ------------------------------------------------------------------- *
-         LR    2,1                 SAVE CPPL ADDR
-         USING CPPL,2
-         L     3,CPPLCBUF          GET CBUF
-* DEBUG: DISPLAY ENTIRE CBUF
-         TPUT  0(3),72
+DATSTR   DS    CL3000
+INBUF    DS    CL512
+RECS     DS    100CL80
 *
-         BAL   6,PARSECP           EXTRACT DSN FROM CBUF
-         LTR   15,15               DSN FOUND?
-         BNZ   PARAMERR            NO, SHOW USAGE
-* DEBUG: DISPLAY PARSED DSN WITH BOUNDS
-         MVC   DEBUGBUF(10),DSNPRFX
-         MVI   DEBUGBUF+10,C'['
-         MVC   DEBUGBUF+11(44),TUNAMDSN
-         MVI   DEBUGBUF+55,C']'
-         TPUT  DEBUGBUF,56
-*
-         BAL   14,ALLOCDS          DYNALLOC DSN (SVC 99)
-         LTR   15,15
-         BNZ   ALLOCERR
-*
-         BAL   14,LOADP            QSAM GET RECORDS
-*
-* ------------------------------------------------------------------- *
-* MAIN EVENT LOOP
-* ------------------------------------------------------------------- *
-MAINLOOP DS    0H
-         BAL   6,DRAWSCN           BUILD 3270 BUFFER
-         BAL   6,DOTPUT            TPUT FULLSCREEN
-         BAL   6,DOTGET            TGET USER INPUT
-*
-         BAL   6,PROCINP           PROCESS AID & MODIFIED FIELDS
-         CLI   AIDBYTE,AIDPF3      EXIT?
-         BE    TERMINAT
-         CLI   AIDBYTE,AIDPF10     SAVE?
-         BE    SAVEP
-*
-         B     MAINLOOP            LOOP FOREVER
-*
-TERMINAT DS    0H
-         BAL   6,FREEDS            UNALLOCATE
-         L     13,SAVEAREA+4
-         LM    14,12,12(13)
-         XR    15,15
-         BR    14
-*
-* ------------------------------------------------------------------- *
-* ERROR HANDLING
-* ------------------------------------------------------------------- *
-PARAMERR DS    0H
-         TPUT  USAGE,36
-         B     TERMINAT
-*
-ALLOCERR DS    0H
-         ST    15,DBLWRK           STORE RC (BYTE 3)
-         MVC   DBLWRK+4(2),S99ERROR STORE ERROR (BYTES 4-5)
-         MVI   DBLWRK+6,X'0F'      PACK SIGN
-         UNPK  ERRDISP(9),DBLWRK+3(5) UNPACK 4 BYTES
-         TR    ERRDISP(8),HEXTAB-240
-         TPUT  ERRMSG1,15
-         TPUT  ERRDISP,8
-         B     TERMINAT
-*
-* ------------------------------------------------------------------- *
-* SUBROUTINE: DRAWSCN - 3270 DATA STREAM GENERATION
-* ------------------------------------------------------------------- *
-DRAWSCN  DS    0H
-         LA    4,DATSTR            STREAM PTR
-         MVI   0(4),X'11'          SBA
-         MVC   1(2,4),POS0101      1,1
-         MVI   3(4),X'1D'          SF
-         MVI   4(4),X'E8'          PROT/HIGH
-         MVC   5(26,4),HDRTXT      TITLE
-         LA    4,31(4)
-*        --- STATUS MSG ---
-         MVI   0(4),X'11'          SBA
-         MVC   1(2,4),POS2401      24,1
-         MVI   3(4),X'1D'          SF
-         MVI   4(4),X'E8'          PROT/HIGH
-         MVC   5(30,4),STATMSG
-         LA    4,35(4)
-*        --- SOURCE LINES (ROW 3-20) ---
-         LA    5,3                 START ROW
-         L     6,TOPREC            RECORD INDEX
-         MVI   0(4),X'11'          SBA
-         BAL   5,GETROW6           ADDR
-         MVC   1(2,4),ROWPOS
-         MVI   3(4),X'1D'          SF
-         MVI   4(4),X'60'          PROT
-         LA    7,1(6)              LINE#
-         CVD   7,DBLWRK
-         UNPK  DLINNUM,DBLWRK+5(3)
-         OI    DLINNUM+4,X'F0'
-         MVC   5(5,4),DLINNUM
-         MVI   10(4),X'1D'         SF (DATA FIELD)
-         MVI   11(4),X'40'         UNPROT
-         LA    8,RECS
-         L     15,H80L             SAVE H80
-         MR    14,6                INDEX * 80
-         AR    8,15                REC ADDR
-         MVC   12(80,4),0(8)
-         LA    4,92(4)
-         LA    5,1(5)
-         LA    6,1(6)
-         CH    5,=H'21'
-         BL    DSLOOP
-         ST    4,CURPTR
-         BR    6
-*
-* ------------------------------------------------------------------- *
-* SUBROUTINE: DOTGET - READ TERMINAL
-* ------------------------------------------------------------------- *
-DOTGET   DS    0H
-         TGET  INBUF,512,ASIS
-         STH   1,INBUFLEN
-         MVI   AIDBYTE,X'7D'       ENTER
-         LTR   1,1
-         BZ    TGETDONE
-         MVC   AIDBYTE(1),INBUF
-TGETDONE BR    6
-*
-* ------------------------------------------------------------------- *
-* SUBROUTINE: PROCINP - INPUT PROCESSING
-* ------------------------------------------------------------------- *
-PROCINP  DS    0H
-         CLI   AIDBYTE,AIDPF7      UP
-         BE    PGUP
-         CLI   AIDBYTE,AIDPF8      DOWN
-         BE    PGDN
-*        --- FIELD PARSING ---
-         LA    8,INBUF+3
-         LH    9,INBUFLEN
-         SH    9,=H'3'
-         BNP   PROCDONE
-         LA    10,INBUF
-         AH    10,INBUFLEN
-PARSEFLD DS    0H
-         CR    8,10
-         BNL   PROCDONE
-         CLI   0(8),X'11'          SBA
-         BNE   NEXTBYTE
-         MVC   FIELDADR(2),1(8)
-         LA    8,3(8)
-         BAL   14,UPDATREC
-         B     PARSEFLD
-NEXTBYTE LA    8,1(8)
-         B     PARSEFLD
-PROCDONE BR    11
-*
-PGUP     DS    0H
-         L     15,TOPREC
-         S     15,=F'18'
-         BP    PGUPOK
-         L     15,=F'0'
-PGUPOK   ST    15,TOPREC
-         BR    11
-PGDN     DS    0H
-         L     15,TOPREC
-         A     15,=F'18'
-         CH    15,=H'82'
-         BL    PGDNOK
-         L     15,=F'82'
-PGDNOK   ST    15,TOPREC
-         BR    11
-*
-* ------------------------------------------------------------------- *
-* SUBROUTINE: UPDATREC - MAP FIELD TO RECORD
-* ------------------------------------------------------------------- *
-UPDATREC DS    0H
-         LA    1,POSTBL+4
-         LA    15,2
-FINDROW  DS    0H
-         CLC   FIELDADR(2),0(1)
-         BE    FOUNDROW
-         LA    1,2(1)
-         LA    15,1(15)
-         CH    15,=H'21'
-         BL    FINDROW
-         BR    14
-FOUNDROW S     15,=F'3'
-         BM    14
-         LA    7,RECS
-         MH    15,H80
-         AR    7,15
-         LR    2,8                 SCAN FOR END
-SCANEND  CR    2,10
-         BNL   DOMOVE
-         CLI   0(2),X'11'
-         BE    DOMOVE
-         LA    2,1(2)
-         B     SCANEND
-DOMOVE   LR    0,2
-         SR    0,8
-         CH    0,H80
-         BNH   OKLEN
-         LH    0,H80
-OKLEN    LTR   0,0
-         BZ    14
-         BCTR  0,0
-         EX    0,MOVREC
-         LR    8,2
-         BR    14
-MOVREC   MVC   0(1,7),0(8)
-*
-* ------------------------------------------------------------------- *
-* QSAM I/O & DYNALLOC ROUTINES
-* ------------------------------------------------------------------- *
-PARSECP  L     3,CPPLCBUF          GET BUFFER
-         USING CBUF,3
-         LH    4,CBUFLEN           TOTAL LEN
-         LH    15,CBUFPL           OFFSET
-         SR    4,15                PARAM LEN
-         BNP   PARSERR             NO PARAMS
-         LA    5,0(3,15)           START ADDR
-* SKIP SPACES AND QUOTES
-PSKIP    CLI   0(5),X'40'          SPACE?
-         BE    PNEXT
-         CLI   0(5),X'7D'          QUOTE?
-         BE    PNEXT
-         B     PFNDST
-PNEXT    LA    5,1(5)
-         BCT   4,PSKIP
-         B     PARSERR
-PFNDST   LR    8,5                 START OF DSN
-* SCAN FOR END
-PSCAN    CLI   0(5),X'40'          SPACE?
-         BE    PFNDED
-         CLI   0(5),X'7D'          QUOTE?
-         BE    PFNDED
-         LA    5,1(5)
-         BCT   4,PSCAN
-PFNDED   LR    4,5
-         SR    4,8                 CALC LEN
-         STH   4,DSNLEN
-         LTR   4,4
-         BZ    PARSERR
-         CH    4,=H'44'
-         BNH   PLENOK
-         LH    4,=H'44'
-PLENOK   STH   4,DSNLEN
-         BCTR  4,0
-         MVI   TUNAMDSN,X'40'
-         MVC   TUNAMDSN+1(43),TUNAMDSN
-         EX    4,MVCDSN
-         SR    15,15
-         BR    6
-PARSERR  LA    15,8
-         BR    6
-MVCDSN   MVC   TUNAMDSN(0),0(8)
-ALLOCDS  DS    0H
-         MVI   S99VERB,X'01'       ALLOC
-         MVC   TUNAMLEN,DSNLEN
-         LA    1,S99RB             ADDR OF RB
-         ST    1,S99RBP            STORE IN PTR
-         OI    S99RBP,X'80'        END OF LIST
-         LA    1,S99RBP            R1 -> PTR
-         SVC   99
-         LR    15,15               SAVE RC
-         BR    6
-*
-LOADP    DS    0H
-         OPEN  (INDCB,(INPUT))
-         TM    INDCB+48,X'10'
-         BZ    LDSNEW
-         LA    7,RECS
-         SR    8,8
-LDSLOOP  GET   INDCB,0(7)
-         LA    7,80(7)
-         LA    8,1(8)
-         CH    8,=H'100'
-         BL    LDSLOOP
-LDSEOF   CLOSE (INDCB)
-         ST    8,RECCNT
-         BR    6
-LDSNEW   DS    0H
-         SR    8,8
-         ST    8,RECCNT            8 IS ZERO
-         MVC   STATMSG,NEWMSG
-         BR    6
-LDSFAIL  LA    15,8
-         BR    6
-*
-SAVEP    DS    0H
-         OPEN  (OUTDCB,(OUTPUT))
-         TM    OUTDCB+48,X'10'
-         BZ    SFAIL
-         LA    7,RECS
-         L     8,RECCNT
-SLOOP    PUT   OUTDCB,0(7)
-         LA    7,80(7)
-         BCT   8,SLOOP
-         CLOSE (OUTDCB)
-         MVC   STATMSG,SVOKMSG
-         BR    6
-SFAIL    MVC   STATMSG,SVERMSG
-         BR    6
-*
-FREEDS   DS    0H
-         MVI   S99VERB,X'02'       UNALLOC
-         SVC   99
-         BR    6
-*
-DOTPUT   DS    0H
-         L     1,CURPTR
-         LA    0,DATSTR
-         SR    1,0
-         TPUT  DATSTR,(0),FULLSCR
-         BR    6
-*
-GETROW6  DS    0H
-         LA    15,POSTBL
-         LR    1,5
-         SLL   1,1
-         AR    15,1
-         MVC   ROWPOS(2),0(15)
-         BR    5
-* (Cleanup: Duplicate data removed)
          LTORG
 *
 CPPL     DSECT
