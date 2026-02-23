@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "term3270.h"
-#include "rpg_formats.h"
+#include "asm_formats.h"
 
 #define MAX_RECORDS 1000
 static char records[MAX_RECORDS][81];
@@ -11,7 +11,7 @@ static int cur_line = 0;
 void draw_header() {
     term_move(0, 0);
     term_attr(ATTR_PROT | ATTR_HIGH);
-    term_put("RPG SEU (MVS Edition) - ");
+    term_put("Assembly SEU (IFOX/MVS) - ");
     term_attr(ATTR_PROT);
     term_put("Press PF3 to Exit, PF1 for Prompt");
     
@@ -48,11 +48,12 @@ int main(int argc, char** argv) {
     init_formats();
     term_init();
     
-    /* Dummy data */
-    strcpy(records[0], "     H                                                                          ");
-    strcpy(records[1], "     FINPUT   I   F  80        DISK                                             ");
-    strcpy(records[2], "     FREPORT  O   F  80        PRINTER                                          ");
-    record_count = 3;
+    /* Dummy data - Assembly code */
+    strcpy(records[0], "MYPROG   START 0                                                                ");
+    strcpy(records[1], "         USING *,15                                                             ");
+    strcpy(records[2], "         BR    14                                                               ");
+    strcpy(records[3], "         END                                                                    ");
+    record_count = 4;
 
     int running = 1;
     while (running) {

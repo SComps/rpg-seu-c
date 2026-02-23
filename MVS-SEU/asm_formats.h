@@ -1,5 +1,5 @@
-#ifndef RPG_FORMATS_H
-#define RPG_FORMATS_H
+#ifndef ASM_FORMATS_H
+#define ASM_FORMATS_H
 
 #define MAX_FIELDS 32
 
