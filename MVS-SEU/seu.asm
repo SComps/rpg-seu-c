@@ -26,9 +26,13 @@ SEU      CSECT
          BAL   11,PARSECP          EXTRACT DSN FROM CBUF
          LTR   15,15               DSN FOUND?
          BNZ   PARAMERR            NO, SHOW USAGE
-* DEBUG: DISPLAY PARSED DSN WITH PREFIX
-         TPUT  DSNPRFX,10
-         TPUT  TUNAMDSN,44
+         BAL   11,PARSECP          EXTRACT DSN FROM CBUF
+         LTR   15,15               DSN FOUND?
+         BNZ   PARAMERR            NO, SHOW USAGE
+* DEBUG: DISPLAY PARSED DSN UNIFIED
+         MVC   DEBUGBUF(10),DSNPRFX
+         MVC   DEBUGBUF+10(44),TUNAMDSN
+         TPUT  DEBUGBUF,54
 *
          BAL   11,ALLOCDS          DYNALLOC DSN (SVC 99)
          LTR   15,15
@@ -67,10 +71,10 @@ PARAMERR DS    0H
          B     TERMINAT
 *
 ALLOCERR DS    0H
-         ST    15,DBLWRK           STORE RC
-         MVC   DBLWRK+4(2),S99ERROR
-         MVI   DBLWRK+6,X'0F'
-         UNPK  ERRDISP(9),DBLWRK+3(5)
+         ST    15,DBLWRK           STORE RC (BYTE 3)
+         MVC   DBLWRK+4(2),S99ERROR STORE ERROR (BYTES 4-5)
+         MVI   DBLWRK+6,X'0F'      PACK SIGN
+         UNPK  ERRDISP(9),DBLWRK+3(5) UNPACK 4 BYTES
          TR    ERRDISP(8),HEXTAB-240
          TPUT  ERRMSG1,15
          TPUT  ERRDISP,8
@@ -237,7 +241,6 @@ PNEXT    LA    5,1(5)
          BCT   4,PSKIP
          B     PARSERR
 PFNDST   LR    8,5                 START OF DSN
-         LR    9,4                 REMAINING LEN
 * SCAN FOR END (SPACE OR QUOTE)
 PSCAN    CLI   0(5),X'40'          SPACE?
          BE    PFNDED
@@ -250,13 +253,14 @@ PFNDED   LR    4,5
          STH   4,DSNLEN
          LTR   4,4
          BZ    PARSERR
+         CH    4,=H'44'
+         BNH   PLENOK
+         LH    4,=H'44'
+PLENOK   STH   4,DSNLEN
          BCTR  4,0
          MVI   TUNAMDSN,X'40'
          MVC   TUNAMDSN+1(43),TUNAMDSN
-         CH    4,=H'43'
-         BNH   PLENOK
-         LH    4,=H'43'
-PLENOK   EX    4,MVCDSN
+         EX    4,MVCDSN
          SR    15,15
          BR    11
 PARSERR  LA    15,8
@@ -353,6 +357,7 @@ ERRMSG1  DC    CL15'ALLOC ERR RC/E:'
 ERRDSN   DC    CL20'DATASET NOT FOUND'
 ERRDISP  DC    CL8' '
 DSNPRFX  DC    CL10'DSN IS:   '
+DEBUGBUF DC    CL60' '
 USAGE    DC    CL36'USAGE: SEU ''DATASET.NAME(MEMBER)'''
 HEXTAB   DC    C'0123456789ABCDEF'
 *
