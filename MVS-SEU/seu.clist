@@ -1,11 +1,5 @@
 PROC 1 DSN
-  /********************************************************************/
-  /* CLIST TO START THE SEU EDITOR                                    */
-  /********************************************************************/
-  IF &STR(&DSN) = HELP THEN DO
-    WRITE USAGE: SEU 'DATASET.NAME(MEMBER)'
-    EXIT
-  END
-  
-  /* PASS DSN DIRECTLY TO THE CALL COMMAND */
-  CALL 'HERC01.TEST.LOADLIB(SEU)' &DSN
+CONTROL NOMSG NOLIST
+ALLOC FI(SYSASMEU) DA('&DSN') SHR REUSE
+CALL 'HERC01.TEST.LOADLIB(SEU)'
+FREE FI(SYSASMEU)
