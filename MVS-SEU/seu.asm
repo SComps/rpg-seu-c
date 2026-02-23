@@ -27,7 +27,7 @@ SEU      CSECT
          LTR   15,15
          BNZ   ALLOCERR
 *
-         BAL   11,LOADPROC         QSAM GET RECORDS
+         BAL   11,LOADP            QSAM GET RECORDS
 *
 * ------------------------------------------------------------------- *
 * MAIN EVENT LOOP
@@ -41,7 +41,7 @@ MAINLOOP DS    0H
          CLI   AIDBYTE,AIDPF3      EXIT?
          BE    TERMINAT
          CLI   AIDBYTE,AIDPF10     SAVE?
-         BE    SAVEPROC
+         BE    SAVEP
 *
          B     MAINLOOP            LOOP FOREVER
 *
@@ -244,7 +244,7 @@ ALLOCDS  DS    0H
          SVC   99
          BR    11
 *
-LOADPROC DS    0H
+LOADP    DS    0H
          OPEN  (INDCB,(INPUT))
          TM    INDCB+48,X'10'
          BZ    LDSFAIL
@@ -261,7 +261,7 @@ LDSEOF   CLOSE (INDCB)
 LDSFAIL  LA    15,8
          BR    11
 *
-SAVEPROC DS    0H
+SAVEP    DS    0H
          OPEN  (OUTDCB,(OUTPUT))
          TM    OUTDCB+48,X'10'
          BZ    SFAIL
@@ -333,8 +333,7 @@ POSTBL   DC    X'4040',X'4040',X'C150',X'C260',X'C3F0',X'C540',X'C650',X
                X'5050',X'D160',X'D2F0',X'D440',X'D550',X'D660',X'D7F0'
 *
 INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(GM),RECFM=FB,LRECL=80,  X
-               EODAD=LDSEOF                                            X
-               
+               EODAD=LDSEOF
 OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
 *
 S99RBPTR DS    F
