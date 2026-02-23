@@ -2,12 +2,12 @@ SEU      CSECT
          STM   14,12,12(13)        SAVE REGISTERS
          BALR  12,0                ADDRESSABILITY
          USING *,12,11,10,9        FOUR BASE REGISTERS
-         LA    11,4095(12)         OFFSET 4096
-         LA    11,1(11)
-         LA    10,4095(11)         OFFSET 8192
-         LA    10,1(10)
-         LA    9,4095(10)          OFFSET 12288
-         LA    9,1(9)
+         LA    11,2048(12)         OFFSET 4096 (2X 2048)
+         LA    11,2048(11)
+         LA    10,2048(11)         OFFSET 8192
+         LA    10,2048(10)
+         LA    9,2048(10)          OFFSET 12288
+         LA    9,2048(9)
 *
          ST    13,SAVEAREA+4       SAVEAREA CHAINING
          LA    15,SAVEAREA
@@ -23,32 +23,31 @@ SEU      CSECT
 * DEBUG: DISPLAY ENTIRE CBUF
          TPUT  0(3),72
 *
-         BAL   11,PARSECP          EXTRACT DSN FROM CBUF
+         BAL   14,PARSECP          EXTRACT DSN FROM CBUF
          LTR   15,15               DSN FOUND?
          BNZ   PARAMERR            NO, SHOW USAGE
-         BAL   11,PARSECP          EXTRACT DSN FROM CBUF
-         LTR   15,15               DSN FOUND?
-         BNZ   PARAMERR            NO, SHOW USAGE
-* DEBUG: DISPLAY PARSED DSN UNIFIED
+* DEBUG: DISPLAY PARSED DSN WITH BOUNDS
          MVC   DEBUGBUF(10),DSNPRFX
-         MVC   DEBUGBUF+10(44),TUNAMDSN
-         TPUT  DEBUGBUF,54
+         MVI   DEBUGBUF+10,C'['
+         MVC   DEBUGBUF+11(44),TUNAMDSN
+         MVI   DEBUGBUF+55,C']'
+         TPUT  DEBUGBUF,56
 *
-         BAL   11,ALLOCDS          DYNALLOC DSN (SVC 99)
+         BAL   14,ALLOCDS          DYNALLOC DSN (SVC 99)
          LTR   15,15
          BNZ   ALLOCERR
 *
-         BAL   11,LOADP            QSAM GET RECORDS
+         BAL   14,LOADP            QSAM GET RECORDS
 *
 * ------------------------------------------------------------------- *
 * MAIN EVENT LOOP
 * ------------------------------------------------------------------- *
 MAINLOOP DS    0H
-         BAL   11,DRAWSCN          BUILD 3270 BUFFER
-         BAL   11,DOTPUT           TPUT FULLSCREEN
-         BAL   11,DOTGET           TGET USER INPUT
+         BAL   14,DRAWSCN          BUILD 3270 BUFFER
+         BAL   14,DOTPUT           TPUT FULLSCREEN
+         BAL   14,DOTGET           TGET USER INPUT
 *
-         BAL   11,PROCINP          PROCESS AID & MODIFIED FIELDS
+         BAL   14,PROCINP          PROCESS AID & MODIFIED FIELDS
          CLI   AIDBYTE,AIDPF3      EXIT?
          BE    TERMINAT
          CLI   AIDBYTE,AIDPF10     SAVE?
@@ -57,7 +56,7 @@ MAINLOOP DS    0H
          B     MAINLOOP            LOOP FOREVER
 *
 TERMINAT DS    0H
-         BAL   11,FREEDS           UNALLOCATE
+         BAL   14,FREEDS           UNALLOCATE
          L     13,SAVEAREA+4
          LM    14,12,12(13)
          XR    15,15
@@ -232,16 +231,17 @@ PARSECP  L     3,CPPLCBUF          GET BUFFER
          SR    4,15                PARAM LEN
          BNP   PARSERR             NO PARAMS
          LA    5,0(3,15)           START ADDR
-* SKIP LEADING SPACES AND QUOTES
+* SKIP SPACES AND QUOTES
 PSKIP    CLI   0(5),X'40'          SPACE?
          BE    PNEXT
          CLI   0(5),X'7D'          QUOTE?
-         BNE   PFNDST
+         BE    PNEXT
+         B     PFNDST
 PNEXT    LA    5,1(5)
          BCT   4,PSKIP
          B     PARSERR
 PFNDST   LR    8,5                 START OF DSN
-* SCAN FOR END (SPACE OR QUOTE)
+* SCAN FOR END
 PSCAN    CLI   0(5),X'40'          SPACE?
          BE    PFNDED
          CLI   0(5),X'7D'          QUOTE?
@@ -262,14 +262,13 @@ PLENOK   STH   4,DSNLEN
          MVC   TUNAMDSN+1(43),TUNAMDSN
          EX    4,MVCDSN
          SR    15,15
-         BR    11
+         BR    14
 PARSERR  LA    15,8
-         BR    11
+         BR    14
 MVCDSN   MVC   TUNAMDSN(0),0(8)
 *
 ALLOCDS  DS    0H
          MVI   S99VERB,X'01'       ALLOC
-*        SET ACTUAL DSN LEN IN TU
          MVC   TUNAMLEN,DSNLEN
          LA    1,S99RB             ADDR OF RB
          ST    1,S99RBP            STORE IN PTR
@@ -277,12 +276,12 @@ ALLOCDS  DS    0H
          LA    1,S99RBP            R1 -> PTR
          SVC   99
          LR    15,15               SAVE RC
-         BR    11
+         BR    14
 *
 LOADP    DS    0H
          OPEN  (INDCB,(INPUT))
          TM    INDCB+48,X'10'
-         BZ    LDSNEW              IF FAIL, ASSUME NEW MEMBER
+         BZ    LDSNEW
          LA    7,RECS
          SR    8,8
 LDSLOOP  GET   INDCB,0(7)
@@ -292,13 +291,13 @@ LDSLOOP  GET   INDCB,0(7)
          BL    LDSLOOP
 LDSEOF   CLOSE (INDCB)
          ST    8,RECCNT
-         BR    11
+         BR    14
 LDSNEW   DS    0H
-         ST    8,RECCNT            8 IS ZERO HERE
+         ST    8,RECCNT            8 IS ZERO
          MVC   STATMSG,NEWMSG
-         BR    11
+         BR    14
 LDSFAIL  LA    15,8
-         BR    11
+         BR    14
 *
 SAVEP    DS    0H
          OPEN  (OUTDCB,(OUTPUT))
@@ -311,19 +310,19 @@ SLOOP    PUT   OUTDCB,0(7)
          BCT   8,SLOOP
          CLOSE (OUTDCB)
          MVC   STATMSG,SVOKMSG
-         BR    11
+         BR    14
 SFAIL    MVC   STATMSG,SVERMSG
-         BR    11
+         BR    14
 *
 FREEDS   MVI   S99VERB,X'02'       UNALLOC
          SVC   99
-         BR    11
+         BR    14
 *
 DOTPUT   L     1,CURPTR
          LA    0,DATSTR
          SR    1,0
          TPUT  DATSTR,(0),FULLSCR
-         BR    11
+         BR    14
 *
 GETROW6  LA    15,POSTBL
          LR    1,5
