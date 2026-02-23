@@ -27,7 +27,9 @@ SEU      CSECT
          MVCL  0,2                 FILL WITH SPACES
 *
          BAL   14,LOADP            READ DATASET INTO RECS
-         TPUT  STATMSG,30          SHOW LOADED/NEW STATUS
+*
+* ENTER TSO FULLSCREEN MODE - REQUIRED FOR TPUT FULLSCR/TGET ASIS
+         STFSMODE ON,INITIAL=YES
 *
 * ================================================================ *
 * MAIN EVENT LOOP                                                  *
@@ -58,9 +60,10 @@ ACHECK   CLI   AIDBYTE,X'F3'       PF3 = EXIT
          B     MAINLP
 *
 * ================================================================ *
-* EXIT                                                             *
+* EXIT - RESTORE LINE MODE AND RETURN                              *
 * ================================================================ *
-EXITPGM  L     13,SAVEARA+4
+EXITPGM  STFSMODE OFF
+         L     13,SAVEARA+4
          LM    14,12,12(13)
          XR    15,15
          BR    14
