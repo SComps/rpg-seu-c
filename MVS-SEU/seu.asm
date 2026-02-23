@@ -75,7 +75,7 @@ ALLOCERR DS    0H
 * ------------------------------------------------------------------- *
 * SUBROUTINE: PARSECP - SIMPLE SCANNER
 * ------------------------------------------------------------------- *
-PARSECP  ST    14,S_PARSE
+PARSECP  ST    14,SPARSE
          L     3,CPPLCBUF
          USING CBUF,3
          LH    4,CBUFLEN
@@ -112,19 +112,19 @@ PLENOK   STH   4,DSNLEN
          BCTR  4,0
          MVI   TUNAMDSN,X'40'
          MVC   TUNAMDSN+1(43),TUNAMDSN
-         EX    4,MVC_DSN
+         EX    4,MVCDSN
          SR    15,15
          B     PRTN
 PERR     LA    15,8
-PRTN     L     14,S_PARSE
+PRTN     L     14,SPARSE
          BR    14
-MVC_DSN  MVC   TUNAMDSN(0),0(8)
-S_PARSE  DS    F
+MVCDSN   MVC   TUNAMDSN(0),0(8)
+SPARSE   DS    F
 *
 * ------------------------------------------------------------------- *
 * SUBROUTINE: ALLOCDS - SVC 99
 * ------------------------------------------------------------------- *
-ALLOCDS  ST    14,S_ALLOC
+ALLOCDS  ST    14,SALLOC
          MVI   S99VERB,X'01'
          MVC   TUNAMLEN,DSNLEN
          LA    1,S99RB
@@ -133,38 +133,38 @@ ALLOCDS  ST    14,S_ALLOC
          LA    1,S99RBP
          SVC   99
          LR    15,15
-         L     14,S_ALLOC
+         L     14,SALLOC
          BR    14
-S_ALLOC  DS    F
+SALLOC   DS    F
 *
 * ------------------------------------------------------------------- *
 * SUBROUTINE: LOADP - QSAM READ
 * ------------------------------------------------------------------- *
-LOADP    ST    14,S_LOAD
+LOADP    ST    14,SLOAD
          OPEN  (INDCB,(INPUT))
          TM    INDCB+48,X'10'
-         BZ    L_NEW
+         BZ    LNEW
          LA    7,RECS
          SR    8,8
-L_LOOP   GET   INDCB,0(7)
+LLOOP    GET   INDCB,0(7)
          LA    7,80(7)
          LA    8,1(8)
          CH    8,=H'100'
-         BL    L_LOOP
-L_EOF    CLOSE (INDCB)
+         BL    LLOOP
+LEOF     CLOSE (INDCB)
          ST    8,RECCNT
-         B     L_RTN
-L_NEW    SR    8,8
+         B     LRTN
+LNEW     SR    8,8
          ST    8,RECCNT
          MVC   STATMSG,NEWMSG
-L_RTN    L     14,S_LOAD
+LRTN     L     14,SLOAD
          BR    14
-S_LOAD   DS    F
+SLOAD    DS    F
 *
 * ------------------------------------------------------------------- *
 * SUBROUTINE: DRAWSCN - RENDER
 * ------------------------------------------------------------------- *
-DRAWSCN  ST    14,S_DRAW
+DRAWSCN  ST    14,SDRAW
          LA    4,DATSTR            BUFFER
          MVI   0(4),X'11'          SBA
          MVC   1(2,4),POS0101
@@ -182,7 +182,7 @@ DRAWSCN  ST    14,S_DRAW
 * RECORDS (ROW 3-20)
          LA    5,3                 ROW
          L     6,TOPREC            INDEX
-D_LOOP   DS    0H
+DLOOP    DS    0H
          MVI   0(4),X'11'          SBA
          BAL   14,GETROW           NESTED CALL
          MVC   1(2,4),ROWPOS
@@ -204,14 +204,14 @@ D_LOOP   DS    0H
          LA    5,1(5)
          LA    6,1(6)
          CH    5,=H'21'
-         BL    D_LOOP
+         BL    DLOOP
          ST    4,CURPTR
-         L     14,S_DRAW
+         L     14,SDRAW
          BR    14
-S_DRAW   DS    F
+SDRAW    DS    F
 *
 * ------------------------------------------------------------------- *
-* SUBROUTINE: DOTGET / DOTPUT / PROCINP (SIMPLIFIED)
+* SUBROUTINE: DOTGET / DOTPUT / SPROC (SIMPLIFIED)
 * ------------------------------------------------------------------- *
 DOTPUT   L     1,CURPTR
          LA    0,DATSTR
@@ -223,49 +223,49 @@ DOTGET   TGET  INBUF,512,ASIS
          STH   1,INBUFLEN
          MVI   AIDBYTE,X'7D'
          LTR   1,1
-         BZ    G_RTN
+         BZ    GRTN
          MVC   AIDBYTE(1),INBUF
-G_RTN    BR    14
+GRTN     BR    14
 *
-PROCINP  ST    14,S_PROC
+PROCINP  ST    14,SPROC
          CLI   AIDBYTE,AIDPF7      UP
-         BE    P_UP
+         BE    PUP
          CLI   AIDBYTE,AIDPF8      DOWN
-         BE    P_DN
+         BE    PDN
 * (Input field logic would go here if needed)
-         B     P_RTN
-P_UP     L     15,TOPREC
+         B     PRTN
+PUP      L     15,TOPREC
          S     15,=F'18'
-         BP    P_UPOK
+         BP    PUPOK
          L     15,=F'0'
-P_UPOK   ST    15,TOPREC
-         B     P_RTN
-P_DN     L     15,TOPREC
+PUPOK    ST    15,TOPREC
+         B     PRTN
+PDN      L     15,TOPREC
          A     15,=F'18'
          CH    15,=H'82'
-         BL    P_DNOK
+         BL    PDNOK
          L     15,=F'82'
-P_DNOK   ST    15,TOPREC
-P_RTN    L     14,S_PROC
+PDNOK    ST    15,TOPREC
+PRTN     L     14,SPROC
          BR    14
-S_PROC   DS    F
+SPROC    DS    F
 *
-SAVEP    ST    14,S_SAVE
+SAVEP    ST    14,SSAVE
          OPEN  (OUTDCB,(OUTPUT))
          TM    OUTDCB+48,X'10'
-         BZ    S_FAIL
+         BZ    SFAIL
          LA    7,RECS
          L     8,RECCNT
-S_LOOP2  PUT   OUTDCB,0(7)
+SLOOP2   PUT   OUTDCB,0(7)
          LA    7,80(7)
-         BCT   8,S_LOOP2
+         BCT   8,SLOOP2
          CLOSE (OUTDCB)
          MVC   STATMSG,SVOKMSG
-         B     S_RTN
-S_FAIL   MVC   STATMSG,SVERMSG
-S_RTN    L     14,S_SAVE
+         B     SRTN
+SFAIL    MVC   STATMSG,SVERMSG
+SRTN     L     14,SSAVE
          BR    14
-S_SAVE   DS    F
+SSAVE    DS    F
 *
 FREEDS   MVI   S99VERB,X'02'
          SVC   99
@@ -316,20 +316,23 @@ POSTBL   DC    X'4040',X'4040',X'C150',X'C260',X'C3F0',X'C540',X'C650',X
                X'5050',X'D160',X'D2F0',X'D440',X'D550',X'D660',X'D7F0'
 *
 INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(GM),RECFM=FB,LRECL=80,  X
-               EODAD=L_EOF
+               EODAD=LEOF
 OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
 *
 S99RBP   DS    F
 S99RB    DS    0F
          DC    AL1(20)
-         DC    AL1(1)              VERB
-         DC    H'0',H'0',H'0'
-         DC    A(S99TUPL)
+S99VERB  DC    AL1(1)              VERB
+S99FLAG1 DC    H'0'
+S99ERROR DC    H'0'
+S99INFO  DC    H'0'
+S99TXTP2 DC    A(S99TUPL)
          DC    F'0',F'0'
 S99TUPL  DC    A(TUNAM)
          DC    A(TUDDN)
          DC    X'80',AL3(TUSTA)
-TUNAM    DC    X'0001',H'1',H'0'
+TUNAM    DC    X'0001',H'1'
+TUNAMLEN DC    H'0'
 TUNAMDSN DC    CL44' '
 TUDDN    DC    X'0002',H'1',X'0008',CL8'SYSASMEU'
 TUSTA    DC    X'0004',H'1',X'0001',X'08'
@@ -337,11 +340,10 @@ TUSTA    DC    X'0004',H'1',X'0001',X'08'
 * ------------------------------------------------------------------- *
 * LARGE BUFFERS (END OF CSECT)
 * ------------------------------------------------------------------- *
+         LTORG                     POOL
 DATSTR   DS    CL3000
 INBUF    DS    CL512
 RECS     DS    100CL80
-*
-         LTORG
 *
 CPPL     DSECT
 CPPLCBUF DS    A
