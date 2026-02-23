@@ -60,7 +60,11 @@ PARAMERR DS    0H
          B     TERMINAT
 *
 ALLOCERR DS    0H
-         UNPK  ERRDISP(5),S99ERROR(3)
+         CLC   S99ERROR(2),=X'0210'
+         BNE   AERRGEN
+         TPUT  ERRDSN,20
+         B     TERMINAT
+AERRGEN  UNPK  ERRDISP(5),S99ERROR(3)
          TR    ERRDISP(4),HEXTAB-240
          TPUT  ERRMSG1,15
          TPUT  ERRDISP,4
@@ -211,23 +215,52 @@ MOVREC   MVC   0(1,7),0(8)
 * ------------------------------------------------------------------- *
 * QSAM I/O & DYNALLOC ROUTINES
 * ------------------------------------------------------------------- *
-PARSECP  L     3,CPPLCBUF          EXTRACT DSN
+PARSECP  L     3,CPPLCBUF          GET BUFFER
          USING CBUF,3
-         LH    4,CBUFLEN
-         LH    15,CBUFPL
+         LH    4,CBUFLEN           TOTAL LEN
+         LH    15,CBUFPL           OFFSET
          SR    4,15                PARAM LEN
          BNP   PARSERR             NO PARAMS
-         LA    5,0(3,15)           ADDR OF PARAMS (BUFFER+OFFSET)
-*        LOOP TO FIND START (SKIP SPACES)
-PSSKIP   CLI   0(5),X'40'
-         BNE   PSFND
+         LA    5,0(3,15)           START ADDR
+* SKIP SPACES
+PSKIP    CLI   0(5),X'40'
+         BNE   PSTART
          LA    5,1(5)
-         BCT   4,PSSKIP
+         BCT   4,PSKIP
          B     PARSERR
-PSFND    STH   4,DSNLEN
-         BCTR  4,0                 FOR EX
+* CHECK FOR QUOTE
+PSTART   STH   4,DSNLEN            MAX POSS LEN
+         CLI   0(5),X'7D'          QUOTE?
+         BNE   PCOPY               NO, JOIN COPY
+         LA    5,1(5)              SKIP LEADING QUOTE
+         BCTR  4,0                 DEC LEN
+         STH   4,DSNLEN
+* SCAN FOR TRAILING QUOTE
+         LTR   4,4
+         BZ    PARSERR
+         LR    6,5                 SCAN PTR
+         LR    7,4                 SCAN COUNT
+PSCAN    CLI   0(6),X'7D'          QUOTE?
+         BE    PFNDQ
+         LA    6,1(6)
+         BCT   7,PSCAN
+         B     PCOPY               NO TRAILING QUOTE
+PFNDQ    LR    4,6
+         SR    4,5                 LENGTH TO QUOTE
+         STH   4,DSNLEN
+PCOPY    DS    0H
+         LH    4,DSNLEN
+         LTR   4,4
+         BZ    PARSERR
+         CH    4,=H'44'
+         BNH   PLENOK
+         LA    4,44
+PLENOK   STH   4,DSNLEN
+         BCTR  4,0
+         MVI   DSNWORK,X'40'
+         MVC   DSNWORK+1(43),DSNWORK
          EX    4,MVCDSN
-         LA    15,0
+         SR    15,15
          BR    11
 PARSERR  LA    15,8
          BR    11
@@ -247,7 +280,7 @@ ALLOCDS  DS    0H
 LOADP    DS    0H
          OPEN  (INDCB,(INPUT))
          TM    INDCB+48,X'10'
-         BZ    LDSFAIL
+         BZ    LDSNEW              IF FAIL, ASSUME NEW MEMBER
          LA    7,RECS
          SR    8,8
 LDSLOOP  GET   INDCB,0(7)
@@ -257,6 +290,10 @@ LDSLOOP  GET   INDCB,0(7)
          BL    LDSLOOP
 LDSEOF   CLOSE (INDCB)
          ST    8,RECCNT
+         BR    11
+LDSNEW   DS    0H
+         ST    8,RECCNT            8 IS ZERO HERE
+         MVC   STATMSG,NEWMSG
          BR    11
 LDSFAIL  LA    15,8
          BR    11
@@ -312,9 +349,11 @@ DSNWORK  DC    CL44' '
 DSNLEN   DC    H'0'
 HDRTXT   DC    CL26'SEU Editor (IFOX/MVS)'
 STATMSG  DC    CL30'LOADED'
+NEWMSG   DC    CL30'NEW MEMBER'
 SVOKMSG  DC    CL30'SAVE COMPLETE'
 SVERMSG  DC    CL30'SAVE FAILED'
 ERRMSG1  DC    CL15'ALLOC ERROR: '
+ERRDSN   DC    CL20'DATASET NOT FOUND'
 ERRDISP  DC    CL4' '
 USAGE    DC    CL36'USAGE: SEU ''DATASET.NAME(MEMBER)'''
 HEXTAB   DC    C'0123456789ABCDEF'
