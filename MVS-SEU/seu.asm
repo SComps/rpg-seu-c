@@ -222,16 +222,15 @@ PARSECP  L     3,CPPLCBUF          GET BUFFER
          SR    4,15                PARAM LEN
          BNP   PARSERR             NO PARAMS
          LA    5,0(3,15)           START ADDR
-* SKIP SPACES
+* SKIP LEADING SPACES
 PSKIP    CLI   0(5),X'40'
          BNE   PSTART
          LA    5,1(5)
          BCT   4,PSKIP
          B     PARSERR
 * CHECK FOR QUOTE
-PSTART   STH   4,DSNLEN            MAX POSS LEN
-         CLI   0(5),X'7D'          QUOTE?
-         BNE   PCOPY               NO, JOIN COPY
+PSTART   CLI   0(5),X'7D'          QUOTE?
+         BNE   PNQ                 NO QUOTE
          LA    5,1(5)              SKIP LEADING QUOTE
          BCTR  4,0                 DEC LEN
          STH   4,DSNLEN
@@ -244,12 +243,23 @@ PSCAN    CLI   0(6),X'7D'          QUOTE?
          BE    PFNDQ
          LA    6,1(6)
          BCT   7,PSCAN
-         B     PCOPY               NO TRAILING QUOTE
+* NO TRAILING QUOTE, JUST USE WHAT'S THERE
+         B     PCOPY
 PFNDQ    LR    4,6
          SR    4,5                 LENGTH TO QUOTE
-         STH   4,DSNLEN
+         B     PCOPY
+* NO QUOTES - SCAN FOR FIRST SPACE OR END
+PNQ      LR    6,5
+         LR    7,4
+PNQSLOP  CLI   0(6),X'40'
+         BE    PNQFND
+         LA    6,1(6)
+         BCT   7,PNQSLOP
+         B     PCOPY               USE FULL LEN
+PNQFND   LR    4,6
+         SR    4,5                 LENGTH TO SPACE
 PCOPY    DS    0H
-         LH    4,DSNLEN
+         STH   4,DSNLEN
          LTR   4,4
          BZ    PARSERR
          CH    4,=H'44'
@@ -275,7 +285,7 @@ ALLOCDS  DS    0H
          OI    S99RBP,X'80'        END OF LIST
          LA    1,S99RBP            R1 -> PTR
          SVC   99
-         LR    15,15               SAVE RETURN CODE
+         LR    15,15               SAVE RC
          BR    11
 *
 LOADP    DS    0H
@@ -376,22 +386,28 @@ INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(GM),RECFM=FB,LRECL=80,  X
 OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
 *
 S99RBP   DS    F
-S99RB    DS    0H
+*
+S99RB    DS    0F
          DC    AL1(20)             RBLEN
 S99VERB  DC    AL1(1)              VERB
 S99FLAG1 DC    H'0'
 S99ERROR DC    H'0'
 S99INFO  DC    H'0'
 S99TXTP2 DC    A(S99TUPL)
-         DC    F'0'                RSVD
-         DC    F'0'                RSVD
+         DC    F'0',F'0'           FLAG2, RSVD
 *
-S99TUPL  DC    A(TUNAM),A(TUDDN),X'80',AL3(TUSTA)
+         DS    0F
+S99TUPL  DC    A(TUNAM)
+         DC    A(TUDDN)
+         DC    X'80',AL3(TUSTA)
+*
+         DS    0H
 TUNAM    DC    X'0001',H'1'
-TUNAMLEN DC    H'44'
+TUNAMLEN DC    H'0'
 TUNAMDSN DC    CL44' '
-TUDDN    DC    X'0002',H'1',H'8',CL8'SYSASMEU'
-TUSTA    DC    X'0004',H'1',H'1',X'08'
+*
+TUDDN    DC    X'0002',H'1',X'0008',CL8'SYSASMEU'
+TUSTA    DC    X'0004',H'1',X'0001',X'08'
 *
 DATSTR   DS    CL4096
 INBUF    DS    CL512
