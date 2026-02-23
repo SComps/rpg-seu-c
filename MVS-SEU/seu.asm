@@ -1,7 +1,14 @@
 SEU      CSECT
          STM   14,12,12(13)        SAVE REGISTERS
          BALR  12,0                ADDRESSABILITY
-         USING *,12
+         USING *,12,11,10,9        FOUR BASE REGISTERS
+         LA    11,4095(12)         OFFSET 4096
+         LA    11,1(11)
+         LA    10,4095(11)         OFFSET 8192
+         LA    10,1(10)
+         LA    9,4095(10)          OFFSET 12288
+         LA    9,1(9)
+*
          ST    13,SAVEAREA+4       SAVEAREA CHAINING
          LA    15,SAVEAREA
          ST    15,8(13)
@@ -14,11 +21,11 @@ SEU      CSECT
          USING CPPL,2
          BAL   11,PARSECP          EXTRACT DSN FROM CBUF
 *
-         BAL   11,ALLOC_DS         DYNALLOC DSN (SVC 99)
+         BAL   11,ALLOCDS          DYNALLOC DSN (SVC 99)
          LTR   15,15
-         BNZ   ALLOC_ERR
+         BNZ   ALLOCERR
 *
-         BAL   11,LOAD_DS          QSAM GET RECORDS
+         BAL   11,LOADDS           QSAM GET RECORDS
 *
 * ------------------------------------------------------------------- *
 * MAIN EVENT LOOP
@@ -32,12 +39,12 @@ MAINLOOP DS    0H
          CLI   AIDBYTE,AIDPF3      EXIT?
          BE    TERMINAT
          CLI   AIDBYTE,AIDPF10     SAVE?
-         BE    SAVE_DS
+         BE    SAVEDS
 *
          B     MAINLOOP            LOOP FOREVER
 *
 TERMINAT DS    0H
-         BAL   11,FREE_DS          UNALLOCATE
+         BAL   11,FREEDS           UNALLOCATE
          L     13,SAVEAREA+4
          LM    14,12,12(13)
          XR    15,15
@@ -46,8 +53,8 @@ TERMINAT DS    0H
 * ------------------------------------------------------------------- *
 * ERROR HANDLING
 * ------------------------------------------------------------------- *
-ALLOC_ERR DS   0H
-         TPUT  ERRMSG1,L'ERRMSG1
+ALLOCERR DS    0H
+         TPUT  ERRMSG1,11
          B     TERMINAT
 *
 * ------------------------------------------------------------------- *
@@ -92,7 +99,7 @@ DSLOOP   DS    0H
          LA    4,92(4)
          LA    5,1(5)
          LA    6,1(6)
-         CH    5,=H21
+         CH    5,=H'21'
          BL    DSLOOP
          ST    4,CURPTR
          BR    11
@@ -120,7 +127,7 @@ PROCINP  DS    0H
 *        --- FIELD PARSING ---
          LA    8,INBUF+3
          LH    9,INBUFLEN
-         SH    9,=H3
+         SH    9,=H'3'
          BNP   PROCDONE
          LA    10,INBUF
          AH    10,INBUFLEN
@@ -140,31 +147,31 @@ PROCDONE BR    11
 PGUP     DS    0H
          L     15,TOPREC
          S     15,=F'18'
-         BP    PGUP_OK
+         BP    PGUPOK
          L     15,=F'0'
-PGUP_OK  ST    15,TOPREC
+PGUPOK   ST    15,TOPREC
          BR    11
 PGDN     DS    0H
          L     15,TOPREC
          A     15,=F'18'
-         CH    15,=H82
-         BL    PGDN_OK
-         L     15,=H82
-PGDN_OK  ST    15,TOPREC
+         CH    15,=H'82'
+         BL    PGDNOK
+         L     15,=F'82'
+PGDNOK   ST    15,TOPREC
          BR    11
 *
 * ------------------------------------------------------------------- *
 * SUBROUTINE: UPDATREC - MAP FIELD TO RECORD
 * ------------------------------------------------------------------- *
 UPDATREC DS    0H
-         LA    1,POS_TBL+4
+         LA    1,POSTBL+4
          LA    15,2
 FINDROW  DS    0H
          CLC   FIELDADR(2),0(1)
          BE    FOUNDROW
          LA    1,2(1)
          LA    15,1(15)
-         CH    15,=H21
+         CH    15,=H'21'
          BL    FINDROW
          BR    14
 FOUNDROW S     15,=F'3'
@@ -197,12 +204,12 @@ MOVREC   MVC   0(1,7),0(8)
 * ------------------------------------------------------------------- *
 PARSECP  L     3,CPPLCBUF          EXTRACT DSN
          USING CBUF,3
-         LH    4,CBUFPLEN
+         LH    4,CBUFPL
          LA    5,CBUFDATA(4)
-         MVC   DSN_WORK(44),0(5)   SIMPLIFIED EXTRACT
+         MVC   DSNWORK(44),0(5)    SIMPLIFIED EXTRACT
          BR    11
 *
-ALLOC_DS DS    0H
+ALLOCDS  DS    0H
          MVI   S99VERB,X'01'       ALLOC
          LA    1,S99TXTPP          TXTPTR
          ST    1,S99RBPTR
@@ -210,37 +217,37 @@ ALLOC_DS DS    0H
          SVC   99
          BR    11
 *
-LOAD_DS  OPEN  (INDCB,(INPUT))
+LOADDS   OPEN  (INDCB,(INPUT))
          TM    INDCB+48,X'10'
-         BZ    LDS_FAIL
+         BZ    LDSFAIL
          LA    7,RECS
          SR    8,8
-LDS_LOOP GET   INDCB,0(7)
+LDSLOOP  GET   INDCB,0(7)
          LA    7,80(7)
          LA    8,1(8)
          CH    8,=H'100'
-         BL    LDS_LOOP
-LDS_EOF  CLOSE (INDCB)
+         BL    LDSLOOP
+LDSEOF   CLOSE (INDCB)
          ST    8,RECCNT
          BR    11
-LDS_FAIL LA    15,8
+LDSFAIL  LA    15,8
          BR    11
 *
-SAVE_DS  OPEN  (OUTDCB,(OUTPUT))
+SAVEDS   OPEN  (OUTDCB,(OUTPUT))
          TM    OUTDCB+48,X'10'
-         BZ    S_FAIL
+         BZ    SFAIL
          LA    7,RECS
          L     8,RECCNT
-S_LOOP   PUT   OUTDCB,0(7)
+SLOOP    PUT   OUTDCB,0(7)
          LA    7,80(7)
-         BCT   8,S_LOOP
+         BCT   8,SLOOP
          CLOSE (OUTDCB)
          MVC   STATMSG,SVOKMSG
          BR    11
-S_FAIL   MVC   STATMSG,SVERMSG
+SFAIL    MVC   STATMSG,SVERMSG
          BR    11
 *
-FREE_DS  MVI   S99VERB,X'02'       UNALLOC
+FREEDS   MVI   S99VERB,X'02'       UNALLOC
          SVC   99
          BR    11
 *
@@ -250,7 +257,7 @@ DOTPUT   L     1,CURPTR
          TPUT  DATSTR,(0),FULLSCR
          BR    11
 *
-GETROW6  LA    15,POS_TBL
+GETROW6  LA    15,POSTBL
          LR    1,5
          SLL   1,1
          AR    15,1
@@ -272,7 +279,7 @@ FIELDADR DC    CL2' '
 ROWPOS   DC    CL2' '
 DLINNUM  DC    CL5' '
 CURPTR   DC    F'0'
-DSN_WORK DC    CL44' '
+DSNWORK  DC    CL44' '
 HDRTXT   DC    CL26'SEU Editor (IFOX/MVS)'
 STATMSG  DC    CL30'LOADED'
 SVOKMSG  DC    CL30'SAVE COMPLETE'
@@ -283,24 +290,26 @@ AIDPF3   EQU   X'F3'
 AIDPF7   EQU   X'F7'
 AIDPF8   EQU   X'F8'
 AIDPF10  EQU   X'FA'
+FULLSCR  EQU   X'03'
+ASIS     EQU   X'01'
 *
 POS0101  DC    X'4040'
 POS2401  DC    X'5C20'             ROW 24 COL 1
-POS_TBL  DC    X'4040',X'4040',X'C150',X'C260',X'C3F0',X'C540',X'C650',X
+POSTBL   DC    X'4040',X'4040',X'C150',X'C260',X'C3F0',X'C540',X'C650',X
                X'C760',X'C8F0',X'4A40',X'4B50',X'4C60',X'4DF0',X'4F40',X
                X'5050',X'D160',X'D2F0',X'D440',X'D550',X'D660',X'D7F0'
 *
 INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(GM),RECFM=FB,LRECL=80,  X
-               EODAD=LDS_EOF
+               EODAD=LDSEOF
 OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
 *
 S99RBPTR DS    F
-S99TXTPP DC    A(S99TUPL)          DEFAULT
-S99VERB  DC    X'01'
-S99TUPL  DC    A(TU0001),A(TU0002),X'80',AL3(TU0004)
-TU0001   DC    X'0001',H'1',H'44',CL44' '
-TU0002   DC    X'0002',H'1',H'8',CL8'SYSASMEU'
-TU0004   DC    X'0004',H'1',H'1',X'08'
+S99TXTPP DC    A(S99TUPL)          TU POINTERS
+S99VERB  DC    X'01'               VERB
+S99TUPL  DC    A(TUNAM),A(TUDDN),X'80',AL3(TUSTA)
+TUNAM    DC    X'0001',H'1',H'44',CL44' '
+TUDDN    DC    X'0002',H'1',H'8',CL8'SYSASMEU'
+TUSTA    DC    X'0004',H'1',H'1',X'08'
 *
 DATSTR   DS    CL4096
 INBUF    DS    CL512
@@ -309,8 +318,8 @@ RECS     DS    100CL80
 CPPL     DSECT
 CPPLCBUF DS    A
 CBUF     DSECT
-CBUFLEN  DS    H
-CBUFPLEN DS    H
+CBUFLL   DS    H
+CBUFPL   DS    H
 CBUFDATA DS    C
 *
          END   SEU
