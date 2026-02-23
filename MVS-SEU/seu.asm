@@ -15,6 +15,67 @@ SEU      CSECT
          LR    13,15
 *
 * ------------------------------------------------------------------- *
+* DATA AREAS (TOP-LOADED FOR ADDRESSABILITY)
+* ------------------------------------------------------------------- *
+         B     DATAEND             SKIP DATA
+SAVEAREA DC    18F'0'
+RECCNT   DC    F'0'
+TOPREC   DC    F'0'
+H80      DC    H'80'
+H80L     DC    F'80'
+DBLWRK   DC    D'0'
+AIDBYTE  DC    X'00'
+INBUFLEN DC    H'0'
+FIELDADR DC    CL2' '
+ROWPOS   DC    CL2' '
+DLINNUM  DC    CL5' '
+CURPTR   DC    F'0'
+DSNLEN   DC    H'0'
+HDRTXT   DC    CL26'SEU Editor (IFOX/MVS)'
+STATMSG  DC    CL30'LOADED'
+NEWMSG   DC    CL30'NEW MEMBER'
+SVOKMSG  DC    CL30'SAVE COMPLETE'
+SVERMSG  DC    CL30'SAVE FAILED'
+ERRMSG1  DC    CL15'ALLOC ERR RC/E:'
+ERRDSN   DC    CL20'DATASET NOT FOUND'
+ERRDISP  DC    CL8' '
+DSNPRFX  DC    CL10'DSN IS:   '
+DEBUGBUF DC    CL64' '
+USAGE    DC    CL36'USAGE: SEU ''DATASET.NAME(MEMBER)'''
+HEXTAB   DC    C'0123456789ABCDEF'
+AIDPF3   EQU   X'F3'
+AIDPF7   EQU   X'F7'
+AIDPF8   EQU   X'F8'
+AIDPF10  EQU   X'FA'
+FULLSCR  EQU   X'03'
+ASIS     EQU   X'01'
+POS0101  DC    X'4040'
+POS2401  DC    X'5C20'
+POSTBL   DC    X'4040',X'4040',X'C150',X'C260',X'C3F0',X'C540',X'C650',X
+               X'C760',X'C8F0',X'4A40',X'4B50',X'4C60',X'4DF0',X'4F40',X
+               X'5050',X'D160',X'D2F0',X'D440',X'D550',X'D660',X'D7F0'
+S99RBP   DS    F
+S99RB    DS    0F
+         DC    AL1(20)             RBLEN
+S99VERB  DC    AL1(1)              VERB
+S99FLAG1 DC    H'0'
+S99ERROR DC    H'0'
+S99INFO  DC    H'0'
+S99TXTP2 DC    A(S99TUPL)
+         DC    F'0',F'0'           FLAG2, RSVD
+         DS    0F
+S99TUPL  DC    A(TUNAM)
+         DC    A(TUDDN)
+         DC    X'80',AL3(TUSTA)
+         DS    0H
+TUNAM    DC    X'0001',H'1'
+TUNAMLEN DC    H'0'
+TUNAMDSN DC    CL44' '
+TUDDN    DC    X'0002',H'1',X'0008',CL8'SYSASMEU'
+TUSTA    DC    X'0004',H'1',X'0001',X'08'
+DATAEND  DS    0H
+*
+* ------------------------------------------------------------------- *
 * INITIALIZATION & DATASET ALLOCATION
 * ------------------------------------------------------------------- *
          LR    2,1                 SAVE CPPL ADDR
@@ -23,7 +84,7 @@ SEU      CSECT
 * DEBUG: DISPLAY ENTIRE CBUF
          TPUT  0(3),72
 *
-         BAL   14,PARSECP          EXTRACT DSN FROM CBUF
+         BAL   6,PARSECP           EXTRACT DSN FROM CBUF
          LTR   15,15               DSN FOUND?
          BNZ   PARAMERR            NO, SHOW USAGE
 * DEBUG: DISPLAY PARSED DSN WITH BOUNDS
@@ -43,11 +104,11 @@ SEU      CSECT
 * MAIN EVENT LOOP
 * ------------------------------------------------------------------- *
 MAINLOOP DS    0H
-         BAL   14,DRAWSCN          BUILD 3270 BUFFER
-         BAL   14,DOTPUT           TPUT FULLSCREEN
-         BAL   14,DOTGET           TGET USER INPUT
+         BAL   6,DRAWSCN           BUILD 3270 BUFFER
+         BAL   6,DOTPUT            TPUT FULLSCREEN
+         BAL   6,DOTGET            TGET USER INPUT
 *
-         BAL   14,PROCINP          PROCESS AID & MODIFIED FIELDS
+         BAL   6,PROCINP           PROCESS AID & MODIFIED FIELDS
          CLI   AIDBYTE,AIDPF3      EXIT?
          BE    TERMINAT
          CLI   AIDBYTE,AIDPF10     SAVE?
@@ -56,7 +117,7 @@ MAINLOOP DS    0H
          B     MAINLOOP            LOOP FOREVER
 *
 TERMINAT DS    0H
-         BAL   14,FREEDS           UNALLOCATE
+         BAL   6,FREEDS            UNALLOCATE
          L     13,SAVEAREA+4
          LM    14,12,12(13)
          XR    15,15
@@ -100,9 +161,8 @@ DRAWSCN  DS    0H
 *        --- SOURCE LINES (ROW 3-20) ---
          LA    5,3                 START ROW
          L     6,TOPREC            RECORD INDEX
-DSLOOP   DS    0H
          MVI   0(4),X'11'          SBA
-         BAL   14,GETROW6          ADDR
+         BAL   5,GETROW6           ADDR
          MVC   1(2,4),ROWPOS
          MVI   3(4),X'1D'          SF
          MVI   4(4),X'60'          PROT
@@ -124,7 +184,7 @@ DSLOOP   DS    0H
          CH    5,=H'21'
          BL    DSLOOP
          ST    4,CURPTR
-         BR    11
+         BR    6
 *
 * ------------------------------------------------------------------- *
 * SUBROUTINE: DOTGET - READ TERMINAL
@@ -136,7 +196,7 @@ DOTGET   DS    0H
          LTR   1,1
          BZ    TGETDONE
          MVC   AIDBYTE(1),INBUF
-TGETDONE BR    11
+TGETDONE BR    6
 *
 * ------------------------------------------------------------------- *
 * SUBROUTINE: PROCINP - INPUT PROCESSING
@@ -262,11 +322,10 @@ PLENOK   STH   4,DSNLEN
          MVC   TUNAMDSN+1(43),TUNAMDSN
          EX    4,MVCDSN
          SR    15,15
-         BR    14
+         BR    6
 PARSERR  LA    15,8
-         BR    14
+         BR    6
 MVCDSN   MVC   TUNAMDSN(0),0(8)
-*
 ALLOCDS  DS    0H
          MVI   S99VERB,X'01'       ALLOC
          MVC   TUNAMLEN,DSNLEN
@@ -276,7 +335,7 @@ ALLOCDS  DS    0H
          LA    1,S99RBP            R1 -> PTR
          SVC   99
          LR    15,15               SAVE RC
-         BR    14
+         BR    6
 *
 LOADP    DS    0H
          OPEN  (INDCB,(INPUT))
@@ -291,13 +350,14 @@ LDSLOOP  GET   INDCB,0(7)
          BL    LDSLOOP
 LDSEOF   CLOSE (INDCB)
          ST    8,RECCNT
-         BR    14
+         BR    6
 LDSNEW   DS    0H
+         SR    8,8
          ST    8,RECCNT            8 IS ZERO
          MVC   STATMSG,NEWMSG
-         BR    14
+         BR    6
 LDSFAIL  LA    15,8
-         BR    14
+         BR    6
 *
 SAVEP    DS    0H
          OPEN  (OUTDCB,(OUTPUT))
@@ -310,102 +370,31 @@ SLOOP    PUT   OUTDCB,0(7)
          BCT   8,SLOOP
          CLOSE (OUTDCB)
          MVC   STATMSG,SVOKMSG
-         BR    14
+         BR    6
 SFAIL    MVC   STATMSG,SVERMSG
-         BR    14
+         BR    6
 *
-FREEDS   MVI   S99VERB,X'02'       UNALLOC
+FREEDS   DS    0H
+         MVI   S99VERB,X'02'       UNALLOC
          SVC   99
-         BR    14
+         BR    6
 *
-DOTPUT   L     1,CURPTR
+DOTPUT   DS    0H
+         L     1,CURPTR
          LA    0,DATSTR
          SR    1,0
          TPUT  DATSTR,(0),FULLSCR
-         BR    14
+         BR    6
 *
-GETROW6  LA    15,POSTBL
+GETROW6  DS    0H
+         LA    15,POSTBL
          LR    1,5
          SLL   1,1
          AR    15,1
          MVC   ROWPOS(2),0(15)
-         BR    14
-*
-* ------------------------------------------------------------------- *
-* DATA AREAS
-* ------------------------------------------------------------------- *
-SAVEAREA DC    18F'0'
-RECCNT   DC    F'0'
-TOPREC   DC    F'0'
-H80      DC    H'80'
-H80L     DC    F'80'
-DBLWRK   DC    D'0'
-AIDBYTE  DC    X'00'
-INBUFLEN DC    H'0'
-FIELDADR DC    CL2' '
-ROWPOS   DC    CL2' '
-DLINNUM  DC    CL5' '
-CURPTR   DC    F'0'
-DSNLEN   DC    H'0'
-HDRTXT   DC    CL26'SEU Editor (IFOX/MVS)'
-STATMSG  DC    CL30'LOADED'
-NEWMSG   DC    CL30'NEW MEMBER'
-SVOKMSG  DC    CL30'SAVE COMPLETE'
-SVERMSG  DC    CL30'SAVE FAILED'
-ERRMSG1  DC    CL15'ALLOC ERR RC/E:'
-ERRDSN   DC    CL20'DATASET NOT FOUND'
-ERRDISP  DC    CL8' '
-DSNPRFX  DC    CL10'DSN IS:   '
-DEBUGBUF DC    CL60' '
-USAGE    DC    CL36'USAGE: SEU ''DATASET.NAME(MEMBER)'''
-HEXTAB   DC    C'0123456789ABCDEF'
-*
-AIDPF3   EQU   X'F3'
-AIDPF7   EQU   X'F7'
-AIDPF8   EQU   X'F8'
-AIDPF10  EQU   X'FA'
-FULLSCR  EQU   X'03'
-ASIS     EQU   X'01'
-*
-POS0101  DC    X'4040'
-POS2401  DC    X'5C20'             ROW 24 COL 1
-POSTBL   DC    X'4040',X'4040',X'C150',X'C260',X'C3F0',X'C540',X'C650',X
-               X'C760',X'C8F0',X'4A40',X'4B50',X'4C60',X'4DF0',X'4F40',X
-               X'5050',X'D160',X'D2F0',X'D440',X'D550',X'D660',X'D7F0'
-*
-INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(GM),RECFM=FB,LRECL=80,  X
-               EODAD=LDSEOF
-OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
-*
-S99RBP   DS    F
-*
-S99RB    DS    0F
-         DC    AL1(20)             RBLEN
-S99VERB  DC    AL1(1)              VERB
-S99FLAG1 DC    H'0'
-S99ERROR DC    H'0'
-S99INFO  DC    H'0'
-S99TXTP2 DC    A(S99TUPL)
-         DC    F'0',F'0'           FLAG2, RSVD
-*
-         DS    0F
-S99TUPL  DC    A(TUNAM)
-         DC    A(TUDDN)
-         DC    X'80',AL3(TUSTA)
-*
-         DS    0H
-TUNAM    DC    X'0001',H'1'
-TUNAMLEN DC    H'0'
-TUNAMDSN DC    CL44' '
-*
-TUDDN    DC    X'0002',H'1',X'0008',CL8'SYSASMEU'
-TUSTA    DC    X'0004',H'1',X'0001',X'08'
-*
-DATSTR   DS    CL4096
-INBUF    DS    CL512
-RECS     DS    100CL80
-*
-         LTORG                     POOL
+         BR    5
+* (Cleanup: Duplicate data removed)
+         LTORG
 *
 CPPL     DSECT
 CPPLCBUF DS    A
