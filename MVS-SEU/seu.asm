@@ -268,13 +268,12 @@ MVCDSN   MVC   DSNWORK(0),0(5)
 *
 ALLOCDS  DS    0H
          MVI   S99VERB,X'01'       ALLOC
-         LA    1,S99TXTPP          TXTPTR
-         ST    1,S99RBPTR
-         OI    S99RBPTR,X'80'
-*        SET ACTUAL DSN LEN IN TU
-         MVC   TUNAMLEN,DSNLEN
-         LA    1,S99RBPTR
+         LA    1,S99RB             ADDR OF RB
+         ST    1,S99RBP            STORE IN PTR
+         OI    S99RBP,X'80'        END OF LIST
+         LA    1,S99RBP            R1 -> PTR
          SVC   99
+         LR    15,15               SAVE RETURN CODE
          BR    11
 *
 LOADP    DS    0H
@@ -375,17 +374,16 @@ INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(GM),RECFM=FB,LRECL=80,  X
                EODAD=LDSEOF
 OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
 *
-S99RBPTR DS    F
-S99TXTPP DC    A(S99TUPL)          TU POINTERS
-S99VERB  DC    X'01'               VERB
-S99BLK   DS    0H
+S99RBP   DS    F
+S99RB    DS    0H
          DC    AL1(20)             RBLEN
-         DC    AL1(1)              VERB
-S99FLAG1 DS    H
-S99ERROR DS    H
-S99INFO  DS    H
+S99VERB  DC    AL1(1)              VERB
+S99FLAG1 DC    H'0'
+S99ERROR DC    H'0'
+S99INFO  DC    H'0'
 S99TXTP2 DC    A(S99TUPL)
-         DS    2F
+         DC    F'0'                RSVD
+         DC    F'0'                RSVD
 *
 S99TUPL  DC    A(TUNAM),A(TUDDN),X'80',AL3(TUSTA)
 TUNAM    DC    X'0001',H'1'
