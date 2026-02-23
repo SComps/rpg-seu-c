@@ -27,7 +27,7 @@ SEU      CSECT
          LTR   15,15
          BNZ   ALLOCERR
 *
-         BAL   11,LOADDSR          QSAM GET RECORDS
+         BAL   11,LOADPROC         QSAM GET RECORDS
 *
 * ------------------------------------------------------------------- *
 * MAIN EVENT LOOP
@@ -41,7 +41,7 @@ MAINLOOP DS    0H
          CLI   AIDBYTE,AIDPF3      EXIT?
          BE    TERMINAT
          CLI   AIDBYTE,AIDPF10     SAVE?
-         BE    SAVEDSR
+         BE    SAVEPROC
 *
          B     MAINLOOP            LOOP FOREVER
 *
@@ -213,7 +213,7 @@ MOVREC   MVC   0(1,7),0(8)
 * ------------------------------------------------------------------- *
 PARSECP  L     3,CPPLCBUF          EXTRACT DSN
          USING CBUF,3
-         LH    4,CBUFLL
+         LH    4,CBUFLEN
          LH    15,CBUFPL
          SR    4,15                PARAM LEN
          BZ    PARSERR             NO PARAMS
@@ -244,7 +244,8 @@ ALLOCDS  DS    0H
          SVC   99
          BR    11
 *
-LOADDSR  OPEN  (INDCB,INPUT)
+LOADPROC DS    0H
+         OPEN  (INDCB,(INPUT))
          TM    INDCB+48,X'10'
          BZ    LDSFAIL
          LA    7,RECS
@@ -260,7 +261,8 @@ LDSEOF   CLOSE (INDCB)
 LDSFAIL  LA    15,8
          BR    11
 *
-SAVEDSR  OPEN  (OUTDCB,OUTPUT)
+SAVEPROC DS    0H
+         OPEN  (OUTDCB,(OUTPUT))
          TM    OUTDCB+48,X'10'
          BZ    SFAIL
          LA    7,RECS
@@ -330,9 +332,10 @@ POSTBL   DC    X'4040',X'4040',X'C150',X'C260',X'C3F0',X'C540',X'C650',X
                X'C760',X'C8F0',X'4A40',X'4B50',X'4C60',X'4DF0',X'4F40',X
                X'5050',X'D160',X'D2F0',X'D440',X'D550',X'D660',X'D7F0'
 *
-INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=GM,RECFM=FB,LRECL=80,    X
-               EODAD=LDSEOF
-OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=PM,RECFM=FB,LRECL=80
+INDCB    DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(GM),RECFM=FB,LRECL=80,  X
+               EODAD=LDSEOF                                            X
+               
+OUTDCB   DCB   DDNAME=SYSASMEU,DSORG=PS,MACRF=(PM),RECFM=FB,LRECL=80
 *
 S99RBPTR DS    F
 S99TXTPP DC    A(S99TUPL)          TU POINTERS
@@ -357,10 +360,12 @@ DATSTR   DS    CL4096
 INBUF    DS    CL512
 RECS     DS    100CL80
 *
+         LTORG                     POOL
+*
 CPPL     DSECT
 CPPLCBUF DS    A
 CBUF     DSECT
-CBUFLL   DS    H
+CBUFLEN  DS    H
 CBUFPL   DS    H
 CBUFDATA DS    C
 *
