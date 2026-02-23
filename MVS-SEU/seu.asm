@@ -216,8 +216,8 @@ PARSECP  L     3,CPPLCBUF          EXTRACT DSN
          LH    4,CBUFLEN
          LH    15,CBUFPL
          SR    4,15                PARAM LEN
-         BZ    PARSERR             NO PARAMS
-         LA    5,CBUFDATA(15)      ADDR OF PARAMS
+         BNP   PARSERR             NO PARAMS
+         LA    5,0(3,15)           ADDR OF PARAMS (BUFFER+OFFSET)
 *        LOOP TO FIND START (SKIP SPACES)
 PSSKIP   CLI   0(5),X'40'
          BNE   PSFND
