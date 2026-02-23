@@ -1,0 +1,10 @@
+PROC 1 DSN
+  /********************************************************************/
+  /* CLIST TO START THE SEU EDITOR                                    */
+  /********************************************************************/
+  IF &DSN = HELP THEN DO
+    WRITE USAGE: SEU 'DATASET.NAME(MEMBER)'
+    EXIT
+  END
+  
+  CALL 'HERC01.TEST.LOADLIB(SEU)' '&DSN'
