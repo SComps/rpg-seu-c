@@ -38,6 +38,7 @@ void rpg_format_edit(char* dest, double val, char code, int len, int dec) {
 // --- Indicators ---
 bool IND[100] = {false};
 bool IN_LR = false;
+bool IN_1P = true;
 bool IN_MR = false;
 bool IN_L[10] = {false};
 #define IN_L1 IN_L[1] 
@@ -69,11 +70,29 @@ int main(int argc, char** argv) {
     FILE* REPORT = fopen(argv[2], "w");
     if (!REPORT) { printf("Failed to open REPORT\n"); return 1; }
 
-    char recordBuf[102];
+    char recordBuf[110];
+    char lineIn[1024];
     bool firstRecord = true;
 
+    // --- 1P Header Processing ---
+    IN_1P = true;
+    fprintf(REPORT, "%*s%s", 30, "", "CUSTOMER REPORT");
+    fprintf(REPORT, "\n");
+    fprintf(REPORT, "%*s%s", 16, "", "NAME");
+    fprintf(REPORT, "%*s%s", 23, "", "ADDRESS");
+    fprintf(REPORT, "%*s%s", 10, "", "PHONE");
+    fprintf(REPORT, "%*s%s", 30, "", "EMAIL");
+    fprintf(REPORT, "\n");
+
     // --- Main Logic Cycle ---
-    while (fread(recordBuf, 1, 100, CUSTIN) > 0) {
+    while (fgets(lineIn, sizeof(lineIn), CUSTIN)) {
+        // Prepare fixed-length buffer from line
+        memset(recordBuf, ' ', sizeof(recordBuf));
+        int len = strlen(lineIn);
+        while(len > 0 && (lineIn[len-1] == '\n' || lineIn[len-1] == '\r')) len--;
+        strncpy(recordBuf, lineIn, (len > 100) ? 100 : len);
+        recordBuf[100] = 0;
+        IN_1P = false;
         // Check for Level Breaks
 
         if (!firstRecord && (
@@ -106,10 +125,11 @@ int main(int argc, char** argv) {
         // --- Detail Calculations ---
 
         // --- Detail Output ---
-            fprintf(REPORT, "%-*s ", 20, NAME);
-            fprintf(REPORT, "%-*s ", 30, ADDR);
-            fprintf(REPORT, "%-*s ", 15, PHONE);
-            fprintf(REPORT, "%-*s ", 35, EMAIL);
+            fprintf(REPORT, "%*s%-*s", 0, "", 20, NAME);
+            fprintf(REPORT, "%*s%-*s", 0, "", 30, ADDR);
+            fprintf(REPORT, "%*s%-*s", 0, "", 15, PHONE);
+            fprintf(REPORT, "%*s%-*s", 0, "", 35, EMAIL);
+            fprintf(REPORT, "\n");
         firstRecord = false;
         if (IN_LR) break;
     }
@@ -122,3 +142,4 @@ int main(int argc, char** argv) {
     if (REPORT) fclose(REPORT);
     return 0;
 }
+

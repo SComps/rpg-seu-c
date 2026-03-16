@@ -1,4 +1,4 @@
-John Doe            123 Maple St, Springfield     555-0101       john.doe@example.com                
-Jane Smith          456 Oak Ave, Metropolis       555-0202       jane.smith@test.org                 
-Bob Johnson         789 Pine Rd, Gotham City      555-0303       bob.j@workmail.com                  
-Alice Williams      321 Cedar Ln, Smallville      555-0404       alice.w@provider.net                
+John Doe            123 Maple St, Springfield     555-0101       john.doe@example.com               
+Jane Smith          456 Oak Ave, Metropolis       555-0202       jane.smith@test.org                
+Bob Johnson         789 Pine Rd, Gotham City      555-0303       bob.j@workmail.com                 
+Alice Williams      321 Cedar Ln, Smallville      555-0404       alice.w@provider.net               

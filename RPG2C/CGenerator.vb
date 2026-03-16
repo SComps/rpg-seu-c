@@ -55,6 +55,7 @@ Public Class CGenerator
         sb.AppendLine("// --- Indicators ---")
         sb.AppendLine("bool IND[100] = {false};")
         sb.AppendLine("bool IN_LR = false;")
+        sb.AppendLine("bool IN_1P = true;")
         sb.AppendLine("bool IN_MR = false;")
         ' Level Indicators
         sb.AppendLine("bool IN_L[10] = {false};")
@@ -144,16 +145,30 @@ Public Class CGenerator
         
         If inFileData IsNot Nothing Then
             Dim recLen = If(inFileData.RecordLength > 0, inFileData.RecordLength, 80)
-            sb.AppendLine($"    char recordBuf[{recLen + 2}];")
+            sb.AppendLine($"    char recordBuf[{recLen + 10}];")
+            sb.AppendLine($"    char lineIn[1024];")
         End If
         sb.AppendLine("    bool firstRecord = true;")
+        sb.AppendLine()
+
+        ' Print 1P Headers before loop
+        sb.AppendLine("    // --- 1P Header Processing ---")
+        sb.AppendLine("    IN_1P = true;")
+        GenerateOutput(sb, vars, "H", "    ")
         sb.AppendLine()
 
         ' RPG Logic Cycle Loop
         sb.AppendLine("    // --- Main Logic Cycle ---")
         If inFileData IsNot Nothing Then
             Dim recLen = If(inFileData.RecordLength > 0, inFileData.RecordLength, 80)
-            sb.AppendLine($"    while (fread(recordBuf, 1, {recLen}, {inFileData.Filename}) > 0) {{")
+            sb.AppendLine($"    while (fgets(lineIn, sizeof(lineIn), {inFileData.Filename})) {{")
+            sb.AppendLine("        // Prepare fixed-length buffer from line")
+            sb.AppendLine("        memset(recordBuf, ' ', sizeof(recordBuf));")
+            sb.AppendLine("        int len = strlen(lineIn);")
+            sb.AppendLine("        while(len > 0 && (lineIn[len-1] == '\n' || lineIn[len-1] == '\r')) len--;")
+            sb.AppendLine($"        strncpy(recordBuf, lineIn, (len > {recLen}) ? {recLen} : len);")
+            sb.AppendLine($"        recordBuf[{recLen}] = 0;")
+            sb.AppendLine("        IN_1P = false;")
             
             ' 1. Check for Level Breaks
             sb.AppendLine("        // Check for Level Breaks")
@@ -261,53 +276,83 @@ Public Class CGenerator
 
         sb.AppendLine("    return 0;")
         sb.AppendLine("}")
-
+        
+        ' Add initial header processing if requested outside loop (simplified)
+        sb.AppendLine()
+        
         Return sb.ToString()
+    End Function
+
+    Private Function GetIndicatorRef(ind As String) As String
+        If String.IsNullOrEmpty(ind) Then Return "true"
+        Dim upper = ind.ToUpper()
+        If upper = "LR" Then Return "IN_LR"
+        If upper = "1P" Then Return "IN_1P"
+        If upper = "L1" Then Return "IN_L1"
+        If upper.StartsWith("L") AndAlso upper.Length = 2 Then Return $"IN_L[{upper.Substring(1)}]"
+        
+        Dim val As Integer
+        If Integer.TryParse(ind, val) Then Return $"IND[{val}]"
+        Return "false"
     End Function
 
     Private Sub GenerateOutput(sb As StringBuilder, vars As Dictionary(Of String, VariableDef), type As String, Optional indent As String = "            ")
         Dim currentOutFile = ""
         Dim currentType = ""
+        Dim lastPos = 0
+
         For Each oSpec In _parser.OutputSpecs
             If oSpec.IsRecordLine Then
+                ' Handle newlines from PREVIOUS record if any
+                ' (Actually RPG does spacing BEFORE the line usually, but SpaceAfter is common)
+                
                 currentOutFile = oSpec.Filename
                 currentType = oSpec.Type
+                
+                If (currentType = type OrElse type = "*ALL") Then
+                    lastPos = 0
+                End If
             Else
                 If Not String.IsNullOrEmpty(currentOutFile) AndAlso (currentType = type OrElse type = "*ALL") Then
-                    ' Simple conditioning (simplified)
+                    ' Simple conditioning
+                    Dim indCondition = ""
                     If Not String.IsNullOrEmpty(oSpec.OutputIndicator1) Then
-                        sb.AppendLine($"{indent}if (IND[{oSpec.OutputIndicator1}]) {{")
-                        indent &= "    "
+                        indCondition = $"if ({GetIndicatorRef(oSpec.OutputIndicator1)}) "
                     End If
 
+                    Dim gap = oSpec.EndPos - lastPos
+                    Dim content = ""
+                    Dim printLen = 0
+
                     If Not String.IsNullOrEmpty(oSpec.FieldName) Then
-                        ' Print Variable
                         If vars.ContainsKey(oSpec.FieldName) Then
                             Dim v = vars(oSpec.FieldName)
+                            printLen = v.Length
                             If v.IsNumeric Then
                                 If Not String.IsNullOrEmpty(oSpec.EditCode) Then
-                                    sb.AppendLine($"{indent}{{")
-                                    sb.AppendLine($"{indent}    char edit_buf[64];")
-                                    sb.AppendLine($"{indent}    rpg_format_edit(edit_buf, {v.Name}, '{oSpec.EditCode}', {v.Length}, {v.DecimalPos});")
-                                    sb.AppendLine($"{indent}    fprintf({currentOutFile}, ""%-*s "", {v.Length}, edit_buf);")
-                                    sb.AppendLine($"{indent}}}")
+                                    sb.AppendLine($"{indent}{indCondition}{{ char buf[64]; rpg_format_edit(buf, {v.Name}, '{oSpec.EditCode}', {v.Length}, {v.DecimalPos}); fprintf({currentOutFile}, ""%*s%s"", {(gap - printLen)}, """", buf); }}")
                                 Else
-                                    sb.AppendLine($"{indent}fprintf({currentOutFile}, ""%-*.*f "", {v.Length}, {v.DecimalPos}, {v.Name});")
+                                    sb.AppendLine($"{indent}{indCondition}fprintf({currentOutFile}, ""%*s%-*.*f"", {(gap - printLen)}, """", {v.Length}, {v.DecimalPos}, {v.Name});")
                                 End If
                             Else
-                                sb.AppendLine($"{indent}fprintf({currentOutFile}, ""%-*s "", {v.Length}, {v.Name});")
+                                sb.AppendLine($"{indent}{indCondition}fprintf({currentOutFile}, ""%*s%-*s"", {(gap - printLen)}, """", {v.Length}, {v.Name});")
                             End If
                         End If
                     ElseIf Not String.IsNullOrEmpty(oSpec.Constant) Then
-                        ' Print Constant
                         Dim sanitized = oSpec.Constant.Replace("'", "")
-                        sb.AppendLine($"{indent}fprintf({currentOutFile}, ""%s "", ""{sanitized}"");")
+                        printLen = sanitized.Length
+                        sb.AppendLine($"{indent}{indCondition}fprintf({currentOutFile}, ""%*s%s"", {(gap - printLen)}, """", ""{sanitized}"");")
                     End If
-
-                    If Not String.IsNullOrEmpty(oSpec.OutputIndicator1) Then
-                        indent = indent.Substring(0, indent.Length - 4)
-                        sb.AppendLine($"{indent}}}")
-                    End If
+                    
+                    lastPos = oSpec.EndPos
+                End If
+            End If
+            
+            ' Add newline if this was the last spec for a record or next line is a new record
+            Dim nextIndex = _parser.OutputSpecs.IndexOf(oSpec) + 1
+            If (nextIndex >= _parser.OutputSpecs.Count OrElse _parser.OutputSpecs(nextIndex).IsRecordLine) AndAlso Not oSpec.IsRecordLine Then
+                If Not String.IsNullOrEmpty(currentOutFile) AndAlso (currentType = type OrElse type = "*ALL") Then
+                    sb.AppendLine($"{indent}fprintf({currentOutFile}, ""\n"");")
                 End If
             End If
         Next
