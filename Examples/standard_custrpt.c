@@ -69,11 +69,11 @@ int main(int argc, char** argv) {
     FILE* REPORT = fopen(argv[2], "w");
     if (!REPORT) { printf("Failed to open REPORT\n"); return 1; }
 
-    char recordBuf[82];
+    char recordBuf[102];
     bool firstRecord = true;
 
     // --- Main Logic Cycle ---
-    while (fread(recordBuf, 1, 80, CUSTIN) > 0) {
+    while (fread(recordBuf, 1, 100, CUSTIN) > 0) {
         // Check for Level Breaks
 
         if (!firstRecord && (

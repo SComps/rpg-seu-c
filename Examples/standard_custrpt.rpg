@@ -1,13 +1,13 @@
      H
-     FCUSTIN  IP  F 100        DISK
-     FREPORT  O   F 132        PRINTER
+     FCUSTIN  IP  F    100        DISK
+     FREPORT  O   F    132        PRINTER
      ICUSTIN  AA  01
-     I                                        1  20 NAME
-     I                                       21  50 ADDR
-     I                                       51  65 PHONE
-     I                                       66 100 EMAIL
+     I                                       1   20 NAME
+     I                                      21   50 ADDR
+     I                                      51   65 PHONE
+     I                                      66  100 EMAIL
      OREPORT  H  2   1P
-     O                                   20 'CUSTOMER REPORT'
+     O                                   45 'CUSTOMER REPORT'
      OREPORT  H  1
      O                                   20 'NAME'
      O                                   50 'ADDRESS'

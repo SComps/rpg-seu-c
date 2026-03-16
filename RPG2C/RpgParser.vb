@@ -12,8 +12,8 @@ Public Class RpgParser
         
         For lineNum As Integer = 1 To lines.Length
             Dim rawLine = lines(lineNum - 1)
-            ' Pad line to ensure fixed-column extraction works even on manually created short files
-            Dim line = rawLine.PadRight(80)
+            ' Expand tabs to spaces (standard 8-column alignment) before parsing columns
+            Dim line = ExpandTabs(rawLine, 8).PadRight(80)
             
             If line.Length < 6 Then 
                 Errors.Add(New RpgError(lineNum, "LINE TOO SHORT", "Line must be at least 6 characters for spec type identification."))
@@ -54,7 +54,8 @@ Public Class RpgParser
         End If
 
         If spec.RecordLength <= 0 Then
-            Errors.Add(New RpgError(lineNum, "INVALID REC LEN", "Record length must be greater than zero."))
+            Dim rawVal = Extract(line, 24, 4)
+            Errors.Add(New RpgError(lineNum, "INVALID REC LEN", $"Record length must be > 0 (Found: '{rawVal}' in cols 24-27)"))
         End If
 
         Return spec
@@ -191,6 +192,19 @@ Public Class RpgParser
         ' If we're here, it means we have non-numeric data in a numeric column
         Errors.Add(New RpgError(lineNum, "NOT NUMERIC", $"{fieldDesc} column ({startCol}-{startCol+length-1}) contains non-numeric data: '{str}'"))
         Return 0
+    End Function
+
+    Private Function ExpandTabs(s As String, tabSize As Integer) As String
+        Dim sb As New System.Text.StringBuilder()
+        For Each c In s
+            If c = vbTab Then
+                Dim spaces = tabSize - (sb.Length Mod tabSize)
+                sb.Append(New String(" "c, spaces))
+            Else
+                sb.Append(c)
+            End If
+        Next
+        Return sb.ToString()
     End Function
 End Class
 
