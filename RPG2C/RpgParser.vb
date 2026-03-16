@@ -44,13 +44,17 @@ Public Class RpgParser
     Private Function ParseFileSpec(line As String, lineNum As Integer) As FileSpec
         Dim spec As New FileSpec()
         spec.Filename = Extract(line, 7, 8)
-        spec.FileType = Extract(line, 15, 1) ' I = Input, O = Output
-        spec.FileDesignation = Extract(line, 16, 1) ' P = Primary
-        spec.RecordLength = ExtractInt(line, 24, 4)
+        spec.FileType = Extract(line, 15, 1) ' I = Input, O = Output, U = Update, C = Combined
+        spec.FileDesignation = Extract(line, 16, 1) ' P = Primary, S = Secondary, R = Record, T = Table, F = Full Procedural
+        spec.RecordLength = ValidateInt(line, 24, 4, lineNum, "RECORD LENGTH")
         spec.Device = Extract(line, 40, 7)
 
         If String.IsNullOrWhiteSpace(spec.Filename) Then
             Errors.Add(New RpgError(lineNum, "MISSING FILENAME", "F-Spec must define a filename."))
+        End If
+
+        If spec.RecordLength <= 0 Then
+            Errors.Add(New RpgError(lineNum, "INVALID REC LEN", "Record length must be greater than zero."))
         End If
 
         Return spec
@@ -67,13 +71,13 @@ Public Class RpgParser
             spec.RecordIdIndicator = Extract(line, 19, 2)
             
             ' Basic Record ID codes (Pos 1)
-            spec.IdPos1 = ExtractInt(line, 21, 4)
+            spec.IdPos1 = ValidateInt(line, 21, 4, lineNum, "ID POS 1")
             spec.IdChar1 = Extract(line, 26, 1)
         Else
             ' It's a field description line
             spec.IsRecordLine = False
-            spec.StartPos = ExtractInt(line, 44, 4)
-            spec.EndPos = ExtractInt(line, 48, 4)
+            spec.StartPos = ValidateInt(line, 44, 4, lineNum, "FROM POSITION")
+            spec.EndPos = ValidateInt(line, 48, 4, lineNum, "TO POSITION")
             spec.DecimalPos = Extract(line, 52, 1)
             spec.IsNumeric = Not String.IsNullOrWhiteSpace(spec.DecimalPos)
             spec.DataType = Extract(line, 43, 1) ' P=Packed, B=Binary
@@ -81,7 +85,20 @@ Public Class RpgParser
             spec.ControlLevel = Extract(line, 59, 2) ' L1-L9
 
             If String.IsNullOrWhiteSpace(spec.FieldName) Then
-                Errors.Add(New RpgError(lineNum, "MISSING FIELD NAME", "I-Spec field description must define a field name."))
+                Errors.Add(New RpgError(lineNum, "MISSING FIELD", "I-Spec field description must define a field name."))
+            End If
+
+            If spec.StartPos <= 0 Or spec.EndPos <= 0 Then
+                Errors.Add(New RpgError(lineNum, "POS OUT RANGE", "Positions must be greater than zero."))
+            ElseIf spec.StartPos > spec.EndPos Then
+                 Errors.Add(New RpgError(lineNum, "INVALID RANGE", "Start position cannot be greater than end position."))
+            End If
+
+            If spec.IsNumeric AndAlso Not String.IsNullOrEmpty(spec.DecimalPos) Then
+                Dim decVal As Integer
+                If Not Integer.TryParse(spec.DecimalPos, decVal) OrElse decVal < 0 OrElse decVal > 9 Then
+                    Errors.Add(New RpgError(lineNum, "INVALID DEC POS", "Decimal position must be between 0 and 9."))
+                End If
             End If
         End If
         
@@ -102,7 +119,7 @@ Public Class RpgParser
         spec.Opcode = Extract(line, 28, 5)
         spec.Factor2 = Extract(line, 33, 10)
         spec.ResultField = Extract(line, 43, 6)
-        spec.FieldLength = ExtractInt(line, 49, 3)
+        spec.FieldLength = ValidateInt(line, 49, 3, lineNum, "FIELD LENGTH")
         spec.DecimalPos = Extract(line, 52, 1)
         spec.HalfAdjust = Extract(line, 53, 1)
         spec.ResultingIndicatorHi = Extract(line, 54, 2)
@@ -131,12 +148,20 @@ Public Class RpgParser
             spec.IsRecordLine = False
             spec.FieldName = Extract(line, 32, 6)
             spec.EditCode = Extract(line, 38, 1)
-            spec.EndPos = ExtractInt(line, 40, 4)
+            spec.EndPos = ValidateInt(line, 40, 4, lineNum, "END POSITION")
             Dim constVal = Extract(line, 45, 26) ' 45-70
             If Not String.IsNullOrWhiteSpace(spec.FieldName) Then
                 spec.EditWord = constVal
             Else
                 spec.Constant = constVal
+            End If
+
+            If String.IsNullOrWhiteSpace(spec.FieldName) AndAlso String.IsNullOrWhiteSpace(spec.Constant) Then
+                Errors.Add(New RpgError(lineNum, "SPEC UNDEFINED", "Output field line must define either a field name or a constant."))
+            End If
+
+            If spec.EndPos <= 0 Then
+                Errors.Add(New RpgError(lineNum, "INVALID END POS", "Output end position must be greater than zero."))
             End If
         End If
         
@@ -154,6 +179,17 @@ Public Class RpgParser
         If String.IsNullOrWhiteSpace(str) Then Return 0
         Dim val As Integer
         If Integer.TryParse(str, val) Then Return val
+        Return 0
+    End Function
+
+    Private Function ValidateInt(line As String, startCol As Integer, length As Integer, lineNum As Integer, fieldDesc As String) As Integer
+        Dim str = Extract(line, startCol, length)
+        If String.IsNullOrWhiteSpace(str) Then Return 0
+        Dim val As Integer
+        If Integer.TryParse(str, val) Then Return val
+        
+        ' If we're here, it means we have non-numeric data in a numeric column
+        Errors.Add(New RpgError(lineNum, "NOT NUMERIC", $"{fieldDesc} column ({startCol}-{startCol+length-1}) contains non-numeric data: '{str}'"))
         Return 0
     End Function
 End Class
