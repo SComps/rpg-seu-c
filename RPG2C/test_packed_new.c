@@ -1,0 +1,3 @@
+Parsing RPG file: test_packed.rpg...
+Listing file generated: test_packed.lst
+Transpilation stopped due to errors. Check the listing file for details.

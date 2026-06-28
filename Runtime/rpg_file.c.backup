@@ -1,0 +1,741 @@
+/**
+ * RPG File Operations Implementation
+ * 
+ * Sequential and relative file I/O support
+ * (Indexed files will be implemented with SQLite in a separate module)
+ * 
+ * Copyright (c) 2026
+ * License: MIT
+ */
+
+#include "rpg_file.h"
+#include "rpg_runtime.h"
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include <sys/file.h>
+#include <sqlite3.h>
+
+/* ============================================================================
+ * HELPER FUNCTIONS
+ * ============================================================================ */
+
+/**
+ * Initialize file structure
+ */
+static RPG_FILE* rpg_file_init(const char* filename, const char* mode, 
+                               rpg_file_type type, int reclen) {
+    RPG_FILE* file = (RPG_FILE*)calloc(1, sizeof(RPG_FILE));
+    if (!file) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Failed to allocate file structure");
+        return NULL;
+    }
+    
+    strncpy(file->filename, filename, sizeof(file->filename) - 1);
+    strncpy(file->mode, mode, sizeof(file->mode) - 1);
+    file->type = type;
+    file->record_length = reclen;
+    file->current_position = 0;
+    file->eof_flag = false;
+    file->found_flag = false;
+    file->error_flag = false;
+    file->fp = NULL;
+    file->index_data = NULL;
+    
+    return file;
+}
+
+/* ============================================================================
+ * SEQUENTIAL FILE OPERATIONS
+ * ============================================================================ */
+
+/**
+ * Open sequential file
+ */
+RPG_FILE* rpg_open_sequential(const char* filename, const char* mode, int reclen) {
+    if (!filename || !mode) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid filename or mode");
+        return NULL;
+    }
+    
+    RPG_FILE* file = rpg_file_init(filename, mode, RPG_FILE_SEQUENTIAL, reclen);
+    if (!file) return NULL;
+    
+    /* Determine fopen mode */
+    const char* fmode = "r";
+    if (strcmp(mode, RPG_MODE_OUTPUT) == 0) {
+        fmode = "w";
+    } else if (strcmp(mode, RPG_MODE_UPDATE) == 0) {
+        fmode = "r+";
+    } else if (strcmp(mode, RPG_MODE_APPEND) == 0) {
+        fmode = "a";
+    }
+    
+    file->fp = fopen(filename, fmode);
+    if (!file->fp) {
+        rpg_set_error(RPG_ERR_FILE_NOT_FOUND, strerror(errno));
+        free(file);
+        return NULL;
+    }
+    
+    /* Try to acquire file lock for update mode */
+    if (strcmp(mode, RPG_MODE_UPDATE) == 0) {
+        int fd = fileno(file->fp);
+        if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+            rpg_set_error(RPG_ERR_FILE_LOCKED, "File is locked by another process");
+            fclose(file->fp);
+            free(file);
+            return NULL;
+        }
+    }
+    
+    return file;
+}
+
+/**
+ * Read next record from sequential file
+ */
+int rpg_read_sequential(RPG_FILE* file, void* buffer) {
+    if (!file || !buffer) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid file or buffer");
+        return RPG_FILE_ERROR;
+    }
+    
+    if (file->eof_flag) {
+        return RPG_FILE_EOF;
+    }
+    
+    if (file->record_length > 0) {
+        /* Fixed-length records */
+        size_t bytes_read = fread(buffer, 1, file->record_length, file->fp);
+        
+        if (bytes_read == 0) {
+            if (feof(file->fp)) {
+                file->eof_flag = true;
+                return RPG_FILE_EOF;
+            } else {
+                file->error_flag = true;
+                rpg_set_error(RPG_ERR_FILE_IO, "Read error");
+                return RPG_FILE_ERROR;
+            }
+        }
+        
+        /* Pad with spaces if short read */
+        if (bytes_read < (size_t)file->record_length) {
+            memset((char*)buffer + bytes_read, ' ', file->record_length - bytes_read);
+        }
+        
+        file->current_position++;
+        return RPG_FILE_OK;
+    } else {
+        /* Variable-length records (line-oriented) */
+        char* line = (char*)buffer;
+        if (fgets(line, 1024, file->fp) == NULL) {
+            if (feof(file->fp)) {
+                file->eof_flag = true;
+                return RPG_FILE_EOF;
+            } else {
+                file->error_flag = true;
+                rpg_set_error(RPG_ERR_FILE_IO, "Read error");
+                return RPG_FILE_ERROR;
+            }
+        }
+        
+        /* Remove trailing newline */
+        size_t len = strlen(line);
+        while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) {
+            line[--len] = '\0';
+        }
+        
+        file->current_position++;
+        return RPG_FILE_OK;
+    }
+}
+
+/**
+ * Write record to sequential file
+ */
+int rpg_write_sequential(RPG_FILE* file, const void* buffer) {
+    if (!file || !buffer) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid file or buffer");
+        return RPG_FILE_ERROR;
+    }
+    
+    if (file->record_length > 0) {
+        /* Fixed-length records */
+        size_t bytes_written = fwrite(buffer, 1, file->record_length, file->fp);
+        
+        if (bytes_written != (size_t)file->record_length) {
+            file->error_flag = true;
+            rpg_set_error(RPG_ERR_FILE_IO, "Write error");
+            return RPG_FILE_ERROR;
+        }
+    } else {
+        /* Variable-length records (line-oriented) */
+        if (fprintf(file->fp, "%s\n", (const char*)buffer) < 0) {
+            file->error_flag = true;
+            rpg_set_error(RPG_ERR_FILE_IO, "Write error");
+            return RPG_FILE_ERROR;
+        }
+    }
+    
+    file->current_position++;
+    return RPG_FILE_OK;
+}
+
+/* ============================================================================
+ * RELATIVE FILE OPERATIONS
+ * ============================================================================ */
+
+/**
+ * Open relative file
+ */
+RPG_FILE* rpg_open_relative(const char* filename, const char* mode, int reclen) {
+    if (!filename || !mode || reclen <= 0) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters for relative file");
+        return NULL;
+    }
+    
+    RPG_FILE* file = rpg_file_init(filename, mode, RPG_FILE_RELATIVE, reclen);
+    if (!file) return NULL;
+    
+    /* Relative files always need read/write access */
+    const char* fmode = "r+b";
+    if (strcmp(mode, RPG_MODE_OUTPUT) == 0) {
+        fmode = "w+b";
+    }
+    
+    file->fp = fopen(filename, fmode);
+    if (!file->fp) {
+        /* Try to create if doesn't exist */
+        file->fp = fopen(filename, "w+b");
+        if (!file->fp) {
+            rpg_set_error(RPG_ERR_FILE_NOT_FOUND, strerror(errno));
+            free(file);
+            return NULL;
+        }
+    }
+    
+    return file;
+}
+
+/**
+ * Read record by number
+ */
+int rpg_read_relative(RPG_FILE* file, void* buffer, long recnum) {
+    if (!file || !buffer || recnum < 1) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters");
+        return RPG_FILE_ERROR;
+    }
+    
+    /* Calculate file position (record numbers are 1-based) */
+    long offset = (recnum - 1) * file->record_length;
+    
+    if (fseek(file->fp, offset, SEEK_SET) != 0) {
+        file->error_flag = true;
+        rpg_set_error(RPG_ERR_FILE_IO, "Seek error");
+        return RPG_FILE_ERROR;
+    }
+    
+    size_t bytes_read = fread(buffer, 1, file->record_length, file->fp);
+    
+    if (bytes_read == 0) {
+        file->found_flag = false;
+        return RPG_FILE_EOF;
+    }
+    
+    /* Pad with spaces if short read */
+    if (bytes_read < (size_t)file->record_length) {
+        memset((char*)buffer + bytes_read, ' ', file->record_length - bytes_read);
+    }
+    
+    /* Check if record is deleted (all zeros) */
+    bool is_deleted = true;
+    for (int i = 0; i < file->record_length; i++) {
+        if (((unsigned char*)buffer)[i] != 0) {
+            is_deleted = false;
+            break;
+        }
+    }
+    
+    if (is_deleted) {
+        file->found_flag = false;
+        rpg_set_error(RPG_ERR_FILE_IO, "Record has been deleted");
+        return RPG_FILE_ERROR;
+    }
+    
+    file->current_position = recnum;
+    file->found_flag = true;
+    return RPG_FILE_OK;
+}
+
+/**
+ * Write record by number
+ */
+int rpg_write_relative(RPG_FILE* file, const void* buffer, long recnum) {
+    if (!file || !buffer || recnum < 1) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters");
+        return RPG_FILE_ERROR;
+    }
+    
+    /* Calculate file position */
+    long offset = (recnum - 1) * file->record_length;
+    
+    if (fseek(file->fp, offset, SEEK_SET) != 0) {
+        file->error_flag = true;
+        rpg_set_error(RPG_ERR_FILE_IO, "Seek error");
+        return RPG_FILE_ERROR;
+    }
+    
+    size_t bytes_written = fwrite(buffer, 1, file->record_length, file->fp);
+    
+    if (bytes_written != (size_t)file->record_length) {
+        file->error_flag = true;
+        rpg_set_error(RPG_ERR_FILE_IO, "Write error");
+        return RPG_FILE_ERROR;
+    }
+    
+    fflush(file->fp);
+    file->current_position = recnum;
+    return RPG_FILE_OK;
+}
+
+/**
+ * Update record by number
+ */
+int rpg_update_relative(RPG_FILE* file, const void* buffer, long recnum) {
+    /* For relative files, update is the same as write */
+    return rpg_write_relative(file, buffer, recnum);
+}
+
+/**
+ * Delete record by number
+ */
+int rpg_delete_relative(RPG_FILE* file, long recnum) {
+    if (!file || recnum < 1) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters");
+        return RPG_FILE_ERROR;
+    }
+    
+    /* Mark record as deleted by writing all zeros */
+    char* empty = (char*)calloc(file->record_length, 1);
+    if (!empty) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Memory allocation failed");
+        return RPG_FILE_ERROR;
+    }
+    
+    int result = rpg_write_relative(file, empty, recnum);
+    free(empty);
+    
+    return result;
+}
+
+/* ============================================================================
+ * INDEXED FILE OPERATIONS (SQLite-based)
+ * ============================================================================ */
+
+/**
+ * SQLite index structure
+ */
+typedef struct {
+    sqlite3* db;
+    sqlite3_stmt* read_stmt;
+    sqlite3_stmt* write_stmt;
+    sqlite3_stmt* update_stmt;
+    sqlite3_stmt* delete_stmt;
+    sqlite3_stmt* chain_stmt;
+    sqlite3_stmt* setll_stmt;
+    sqlite3_stmt* setgt_stmt;
+    char current_key[256];
+    int has_current;
+} rpg_index_data;
+
+/**
+ * Open indexed (keyed) file
+ */
+RPG_FILE* rpg_open_indexed(const char* filename, const char* mode,
+                           int reclen, int keylen) {
+    if (!filename || !mode || reclen <= 0 || keylen <= 0) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters");
+        return NULL;
+    }
+    
+    /* Create file structure */
+    RPG_FILE* file = rpg_file_init(filename, mode, RPG_FILE_INDEXED, reclen);
+    if (!file) return NULL;
+    
+    file->key_length = keylen;
+    
+    /* Allocate index data */
+    rpg_index_data* idx = (rpg_index_data*)calloc(1, sizeof(rpg_index_data));
+    if (!idx) {
+        free(file);
+        rpg_set_error(RPG_ERR_FILE_IO, "Failed to allocate index data");
+        return NULL;
+    }
+    file->index_data = idx;
+    
+    /* Open/create SQLite database */
+    char db_name[512];
+    snprintf(db_name, sizeof(db_name), "%s.db", filename);
+    
+    int rc = sqlite3_open(db_name, &idx->db);
+    if (rc != SQLITE_OK) {
+        rpg_set_error(RPG_ERR_FILE_IO, sqlite3_errmsg(idx->db));
+        sqlite3_close(idx->db);
+        free(idx);
+        free(file);
+        return NULL;
+    }
+    
+    /* Create table if it doesn't exist */
+    char sql[512];
+    snprintf(sql, sizeof(sql),
+        "CREATE TABLE IF NOT EXISTS records ("
+        "key BLOB PRIMARY KEY, "
+        "data BLOB NOT NULL, "
+        "deleted INTEGER DEFAULT 0)");
+    
+    char* err_msg = NULL;
+    rc = sqlite3_exec(idx->db, sql, NULL, NULL, &err_msg);
+    if (rc != SQLITE_OK) {
+        rpg_set_error(RPG_ERR_FILE_IO, err_msg);
+        sqlite3_free(err_msg);
+        sqlite3_close(idx->db);
+        free(idx);
+        free(file);
+        return NULL;
+    }
+    
+    /* Prepare statements */
+    sqlite3_prepare_v2(idx->db,
+        "SELECT data FROM records WHERE key = ? AND deleted = 0",
+        -1, &idx->chain_stmt, NULL);
+    
+    sqlite3_prepare_v2(idx->db,
+        "INSERT OR REPLACE INTO records (key, data, deleted) VALUES (?, ?, 0)",
+        -1, &idx->write_stmt, NULL);
+    
+    sqlite3_prepare_v2(idx->db,
+        "UPDATE records SET data = ? WHERE key = ? AND deleted = 0",
+        -1, &idx->update_stmt, NULL);
+    
+    sqlite3_prepare_v2(idx->db,
+        "UPDATE records SET deleted = 1 WHERE key = ?",
+        -1, &idx->delete_stmt, NULL);
+    
+    sqlite3_prepare_v2(idx->db,
+        "SELECT key, data FROM records WHERE key >= ? AND deleted = 0 ORDER BY key LIMIT 1",
+        -1, &idx->setll_stmt, NULL);
+    
+    sqlite3_prepare_v2(idx->db,
+        "SELECT key, data FROM records WHERE key > ? AND deleted = 0 ORDER BY key LIMIT 1",
+        -1, &idx->setgt_stmt, NULL);
+    
+    return file;
+}
+
+/**
+ * Chain to record by key
+ */
+int rpg_chain_indexed(RPG_FILE* file, void* buffer, const void* key) {
+    if (!file || !buffer || !key || file->type != RPG_FILE_INDEXED) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters");
+        return RPG_FILE_ERROR;
+    }
+    
+    rpg_index_data* idx = (rpg_index_data*)file->index_data;
+    if (!idx || !idx->chain_stmt) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid index data");
+        return RPG_FILE_ERROR;
+    }
+    
+    /* Bind key parameter */
+    sqlite3_reset(idx->chain_stmt);
+    sqlite3_bind_blob(idx->chain_stmt, 1, key, file->key_length, SQLITE_STATIC);
+    
+    /* Execute query */
+    int rc = sqlite3_step(idx->chain_stmt);
+    
+    if (rc == SQLITE_ROW) {
+        /* Record found */
+        const void* data = sqlite3_column_blob(idx->chain_stmt, 0);
+        int data_len = sqlite3_column_bytes(idx->chain_stmt, 0);
+        
+        if (data_len > 0) {
+            memcpy(buffer, data, (data_len < file->record_length) ? data_len : file->record_length);
+            if (data_len < file->record_length) {
+                memset((char*)buffer + data_len, ' ', file->record_length - data_len);
+            }
+        }
+        
+        /* Save current key */
+        memcpy(idx->current_key, key, file->key_length);
+        idx->has_current = 1;
+        file->found_flag = true;
+        
+        return RPG_FILE_OK;
+    } else if (rc == SQLITE_DONE) {
+        /* Record not found */
+        file->found_flag = false;
+        return RPG_FILE_EOF;
+    } else {
+        /* Error */
+        rpg_set_error(RPG_ERR_FILE_IO, sqlite3_errmsg(idx->db));
+        file->error_flag = true;
+        return RPG_FILE_ERROR;
+    }
+}
+
+/**
+ * Read next record with matching key
+ */
+int rpg_reade_indexed(RPG_FILE* file, void* buffer, const void* key) {
+    /* For now, READE is same as CHAIN since we have unique keys */
+    /* In a full implementation, this would handle duplicate keys */
+    return rpg_chain_indexed(file, buffer, key);
+}
+
+/**
+ * Read previous record
+ */
+int rpg_readp_indexed(RPG_FILE* file, void* buffer) {
+    if (!file || !buffer || file->type != RPG_FILE_INDEXED) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters");
+        return RPG_FILE_ERROR;
+    }
+    
+    rpg_index_data* idx = (rpg_index_data*)file->index_data;
+    if (!idx || !idx->has_current) {
+        rpg_set_error(RPG_ERR_FILE_IO, "No current position");
+        return RPG_FILE_ERROR;
+    }
+    
+    /* Prepare statement for reading previous record */
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(idx->db,
+        "SELECT key, data FROM records WHERE key < ? AND deleted = 0 ORDER BY key DESC LIMIT 1",
+        -1, &stmt, NULL);
+    
+    if (rc != SQLITE_OK) {
+        rpg_set_error(RPG_ERR_FILE_IO, sqlite3_errmsg(idx->db));
+        return RPG_FILE_ERROR;
+    }
+    
+    sqlite3_bind_blob(stmt, 1, idx->current_key, file->key_length, SQLITE_STATIC);
+    
+    rc = sqlite3_step(stmt);
+    
+    if (rc == SQLITE_ROW) {
+        const void* new_key = sqlite3_column_blob(stmt, 0);
+        const void* data = sqlite3_column_blob(stmt, 1);
+        int data_len = sqlite3_column_bytes(stmt, 1);
+        
+        if (data_len > 0) {
+            memcpy(buffer, data, (data_len < file->record_length) ? data_len : file->record_length);
+            if (data_len < file->record_length) {
+                memset((char*)buffer + data_len, ' ', file->record_length - data_len);
+            }
+        }
+        
+        memcpy(idx->current_key, new_key, file->key_length);
+        file->found_flag = true;
+        
+        sqlite3_finalize(stmt);
+        return RPG_FILE_OK;
+    } else {
+        sqlite3_finalize(stmt);
+        file->found_flag = false;
+        return RPG_FILE_EOF;
+    }
+}
+
+/**
+ * Read previous record with matching key
+ */
+int rpg_readpe_indexed(RPG_FILE* file, void* buffer, const void* key) {
+    /* For now, same as READP since we have unique keys */
+    (void)key;
+    return rpg_readp_indexed(file, buffer);
+}
+
+/**
+ * Set lower limit (position before key)
+ */
+int rpg_setll_indexed(RPG_FILE* file, const void* key) {
+    if (!file || !key || file->type != RPG_FILE_INDEXED) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters");
+        return RPG_FILE_ERROR;
+    }
+    
+    rpg_index_data* idx = (rpg_index_data*)file->index_data;
+    if (!idx || !idx->setll_stmt) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid index data");
+        return RPG_FILE_ERROR;
+    }
+    
+    sqlite3_reset(idx->setll_stmt);
+    sqlite3_bind_blob(idx->setll_stmt, 1, key, file->key_length, SQLITE_STATIC);
+    
+    int rc = sqlite3_step(idx->setll_stmt);
+    
+    if (rc == SQLITE_ROW) {
+        const void* found_key = sqlite3_column_blob(idx->setll_stmt, 0);
+        memcpy(idx->current_key, found_key, file->key_length);
+        idx->has_current = 1;
+        file->found_flag = true;
+        return RPG_FILE_OK;
+    } else {
+        file->found_flag = false;
+        return RPG_FILE_EOF;
+    }
+}
+
+/**
+ * Set greater than (position after key)
+ */
+int rpg_setgt_indexed(RPG_FILE* file, const void* key) {
+    if (!file || !key || file->type != RPG_FILE_INDEXED) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters");
+        return RPG_FILE_ERROR;
+    }
+    
+    rpg_index_data* idx = (rpg_index_data*)file->index_data;
+    if (!idx || !idx->setgt_stmt) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid index data");
+        return RPG_FILE_ERROR;
+    }
+    
+    sqlite3_reset(idx->setgt_stmt);
+    sqlite3_bind_blob(idx->setgt_stmt, 1, key, file->key_length, SQLITE_STATIC);
+    
+    int rc = sqlite3_step(idx->setgt_stmt);
+    
+    if (rc == SQLITE_ROW) {
+        const void* found_key = sqlite3_column_blob(idx->setgt_stmt, 0);
+        memcpy(idx->current_key, found_key, file->key_length);
+        idx->has_current = 1;
+        file->found_flag = true;
+        return RPG_FILE_OK;
+    } else {
+        file->found_flag = false;
+        return RPG_FILE_EOF;
+    }
+}
+
+/**
+ * Update current record
+ */
+int rpg_update_indexed(RPG_FILE* file, const void* buffer) {
+    if (!file || !buffer || file->type != RPG_FILE_INDEXED) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters");
+        return RPG_FILE_ERROR;
+    }
+    
+    rpg_index_data* idx = (rpg_index_data*)file->index_data;
+    if (!idx || !idx->has_current || !idx->update_stmt) {
+        rpg_set_error(RPG_ERR_FILE_IO, "No current record to update");
+        return RPG_FILE_ERROR;
+    }
+    
+    sqlite3_reset(idx->update_stmt);
+    sqlite3_bind_blob(idx->update_stmt, 1, buffer, file->record_length, SQLITE_STATIC);
+    sqlite3_bind_blob(idx->update_stmt, 2, idx->current_key, file->key_length, SQLITE_STATIC);
+    
+    int rc = sqlite3_step(idx->update_stmt);
+    
+    if (rc == SQLITE_DONE) {
+        return RPG_FILE_OK;
+    } else {
+        rpg_set_error(RPG_ERR_FILE_IO, sqlite3_errmsg(idx->db));
+        file->error_flag = true;
+        return RPG_FILE_ERROR;
+    }
+}
+
+/**
+ * Delete current record
+ */
+int rpg_delete_indexed(RPG_FILE* file) {
+    if (!file || file->type != RPG_FILE_INDEXED) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters");
+        return RPG_FILE_ERROR;
+    }
+    
+    rpg_index_data* idx = (rpg_index_data*)file->index_data;
+    if (!idx || !idx->has_current || !idx->delete_stmt) {
+        rpg_set_error(RPG_ERR_FILE_IO, "No current record to delete");
+        return RPG_FILE_ERROR;
+    }
+    
+    sqlite3_reset(idx->delete_stmt);
+    sqlite3_bind_blob(idx->delete_stmt, 1, idx->current_key, file->key_length, SQLITE_STATIC);
+    
+    int rc = sqlite3_step(idx->delete_stmt);
+    
+    if (rc == SQLITE_DONE) {
+        idx->has_current = 0;
+        return RPG_FILE_OK;
+    } else {
+        rpg_set_error(RPG_ERR_FILE_IO, sqlite3_errmsg(idx->db));
+        file->error_flag = true;
+        return RPG_FILE_ERROR;
+    }
+}
+
+/**
+ * Write new record
+ */
+int rpg_write_indexed(RPG_FILE* file, const void* buffer, const void* key) {
+    if (!file || !buffer || !key || file->type != RPG_FILE_INDEXED) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid parameters");
+        return RPG_FILE_ERROR;
+    }
+    
+    rpg_index_data* idx = (rpg_index_data*)file->index_data;
+    if (!idx || !idx->write_stmt) {
+        rpg_set_error(RPG_ERR_FILE_IO, "Invalid index data");
+        return RPG_FILE_ERROR;
+    }
+    
+    sqlite3_reset(idx->write_stmt);
+    sqlite3_bind_blob(idx->write_stmt, 1, key, file->key_length, SQLITE_STATIC);
+    sqlite3_bind_blob(idx->write_stmt, 2, buffer, file->record_length, SQLITE_STATIC);
+    
+    int rc = sqlite3_step(idx->write_stmt);
+    
+    if (rc == SQLITE_DONE) {
+        memcpy(idx->current_key, key, file->key_length);
+        idx->has_current = 1;
+        return RPG_FILE_OK;
+    } else {
+        rpg_set_error(RPG_ERR_FILE_IO, sqlite3_errmsg(idx->db));
+        file->error_flag = true;
+        return RPG_FILE_ERROR;
+    }
+}
+
+
+
+/* ============================================================================
+ * COMMON FILE OPERATIONS
+ * ============================================================================ */
+
+void rpg_close_file(RPG_FILE* file) {
+    if (!file) return;
+    
+    if (file->fp) {
+        fclose(file->fp);
+        file->fp = NULL;
+    }
+    
+    // Free any index data if present
+    if (file->index_data) {
+        // For indexed files, this would close SQLite connection
+        // Not implemented yet
+        file->index_data = NULL;
+    }
+    
+    free(file);
+}

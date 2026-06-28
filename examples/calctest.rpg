@@ -1,0 +1,107 @@
+H* CALCULATION OPERATIONS TEST
+H* Tests string, math, and array operations
+H*
+FREPORT   O   F 132 132            PRINTER
+F*
+C* Initialize test values
+C           Z-ADD 100         NUM1     52
+C           Z-ADD 25          NUM2     52
+C           Z-ADD 3           NUM3     52
+C*
+C* Basic arithmetic
+C           NUM1      ADD   NUM2      SUM      52
+C           NUM1      SUB   NUM2      DIFF     52
+C           NUM1      MULT  NUM2      PROD     92
+C           NUM1      DIV   NUM2      QUOT     52
+C*
+C* Advanced math
+C           NUM1      SQRT            SQROOT   52
+C           NUM1      DIV   NUM3      RESULT   52
+C           NUM1      MVR   NUM3      REMAIN   52
+C*
+C* Half-adjust rounding
+C           NUM1      ADD   0.555     ROUND1  52H
+C           NUM2      MULT  1.333     ROUND2  52H
+C*
+C* String operations
+C           'HELLO'   CAT   'WORLD':0 STR1     20
+C           'HELLO'   CAT   'WORLD':1 STR2     20
+C           STR2      SUBST 1:5       SUB1     10
+C           STR2      SCAN  'WORLD'   POS1     20
+C           'hello'   XLATE 'helo':'HELO'XLAT1 20
+C           'TEST  '  TRIM            TRIM1    10
+C*
+C* Array operations
+C           Z-ADD 10          ARR1     52
+C           Z-ADD 20          ARR2     52
+C           Z-ADD 30          ARR3     52
+C           Z-ADD 40          ARR4     52
+C           Z-ADD 50          ARR5     52
+C*
+C           ARR       XFOOT           TOTAL    92
+C           ARR       SORTA
+C*
+C* Comparisons and indicators
+C           NUM1      COMP  NUM2             5152
+C  51                 SETON                       10
+C  52                 SETON                       20
+C*
+C* Output results
+O*
+OREPORT    H    1P
+O                                       40 'CALCULATION TEST RESULTS'
+O          H    1P
+O                                       20 'OPERATION'
+O                                       50 'RESULT'
+O          H    1P
+O                                       50 '----------'
+O*
+OREPORT    D    1P
+O                                       20 'SUM:'
+O                    SUM          1    50
+O          D    1P
+O                                       20 'DIFFERENCE:'
+O                    DIFF         1    50
+O          D    1P
+O                                       20 'PRODUCT:'
+O                    PROD         1    50
+O          D    1P
+O                                       20 'QUOTIENT:'
+O                    QUOT         1    50
+O          D    1P
+O                                       20 'SQUARE ROOT:'
+O                    SQROOT       1    50
+O          D    1P
+O                                       20 'REMAINDER:'
+O                    REMAIN       1    50
+O          D    1P
+O                                       20 'ROUNDED 1:'
+O                    ROUND1       1    50
+O          D    1P
+O                                       20 'ROUNDED 2:'
+O                    ROUND2       1    50
+O          D    1P
+O                                       20 'CONCAT (no space):'
+O                    STR1              50
+O          D    1P
+O                                       20 'CONCAT (1 space):'
+O                    STR2              50
+O          D    1P
+O                                       20 'SUBSTRING:'
+O                    SUB1              50
+O          D    1P
+O                                       20 'SCAN POSITION:'
+O                    POS1              50
+O          D    1P
+O                                       20 'TRANSLATE:'
+O                    XLAT1             50
+O          D    1P
+O                                       20 'TRIM:'
+O                    TRIM1             50
+O          D    1P
+O                                       20 'ARRAY TOTAL:'
+O                    TOTAL        1    50
+O          D    1P
+O  10                                   20 'NUM1 > NUM2'
+O          D    1P
+O  20                                   20 'NUM1 < NUM2'

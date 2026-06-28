@@ -1,0 +1,64 @@
+H* INVENTORY MANAGEMENT SYSTEM
+H* Demonstrates RPG II features: file I/O, calculations, arrays, strings
+H*
+FINVENTORYIP  F  80  80            DISK
+FREPORT   O   F 132 132            PRINTER
+F*
+I* Input file: INVENTORY (Product inventory records)
+IINVENTORY NS  01
+I                                        1   5 PCODE
+I                                        6  35 PDESC
+I                                       36  43 2PRICE
+I                                       44  49 0QTY
+I                                       50  57 2COST
+I*
+C* Data structures for calculations
+C           PCODE     CAT   PDESC     PNAME    35
+C           PRICE     MULT  QTY       EXTPRC   92
+C           EXTPRC    SUB   COST      PROFIT   92
+C*
+C* Array for top 5 products
+C           TOPQTY    SORTA                    5
+C           TOPQTY    XFOOT           TOTQTY   50
+C*
+C* String operations
+C           PDESC     SCAN  'WIDGET'  POS      20
+C           PDESC     SUBST 1    10   SHORT    10
+C           SHORT     TRIM            TRIMMED  10
+C*
+C* Math operations
+C           PRICE     SQRT            SQRTP    82
+C           QTY       DIV   3         THIRD    20
+C           QTY       MVR   3         REMAIN   20
+C*
+C* Half-adjust example
+C           PRICE     ADD   0.005     ROUNDP  82H
+C*
+C* Indicators and comparisons
+C           QTY       COMP  100              5152
+C  51                 SETON                       53
+C  52                 SETOF                       53
+C*
+C* Output to report
+O*
+OREPORT    H    1P
+O                                       30 'INVENTORY REPORT'
+O          H    1P
+O                                       10 'CODE'
+O                                       40 'DESCRIPTION'
+O                                       55 'PRICE'
+O                                       70 'QTY'
+O                                       85 'VALUE'
+O          H    1P
+O                                       85 '----------'
+O*
+OREPORT    D    01
+O                    PCODE              10
+O                    PDESC              40
+O                    PRICE         1    55
+O                    QTY                70
+O                    EXTPRC        1    85
+O*
+OREPORT    T    LR
+O                                       40 'TOTAL QUANTITY:'
+O                    TOTQTY             70

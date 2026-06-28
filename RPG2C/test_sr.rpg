@@ -1,5 +1,5 @@
      H                                                                          
-     FCONSOLE O   F  80        PRINTER                                       
+     FCONSOLE O   F      80    PRINTER
      C                     MOVE 'START'   MSG1   5                             
      C                     EXSR SUB1                                           
      C                     MOVE 'END'     MSG2   5                             
