@@ -1,0 +1,42 @@
+//BUILD2   JOB  'SCOTT',CLASS=A,MSGCLASS=A,MSGLEVEL=(1,1),REGION=512K
+//RPGCLG   EXEC RPGECLG,COND.LKED=(9,LT,RPG)
+//RPG.SYSUT3  DD  UNIT=SYSDA
+//RPG.SYSUT2  DD  UNIT=SYSDA
+//RPG.SYSUT1  DD  UNIT=SYSDA
+//RPG.SYSIN   DD  *
+     H
+      * ===================================================================
+      * FILE DESCRIPTION SPECIFICATIONS (F-SPECS)
+      * ===================================================================
+     FPEOPLE  IPE F00870087            READ40
+     FQSYSPRT O   F01320132     OF    LPRINTER
+     LQSYSPRT 0010106012
+      * ===================================================================
+      * INPUT SPECIFICATIONS (I-SPECS)
+      * ===================================================================
+     IPEOPLE  AA  01
+     I                                     00010030 NAME
+     I                                     00310060 ADDR
+     I                                     00610080 CITY
+     I                                     00810082 STATE
+     I                                     00830087 ZIP
+      * ===================================================================
+      * OUTPUT SPECIFICATIONS (O-SPECS)
+      * ===================================================================
+     OQSYSPRT H  201   1P
+     O       OR        OF
+     O                                 0030 'NAME'
+     O                                 0062 'ADDRESS'
+     O                                 0094 'CITY'
+     O                                 0117 'STATE'
+     O                                 0125 'ZIP'
+     OQSYSPRT D  1     01
+     O                         NAME    0030
+     O                         ADDR    0062
+     O                         CITY    0094
+     O                         STATE   0117
+     O                         ZIP     0125
+//GO.SYSUDUMP  DD SYSOUT=A
+//GO.PEOPLE    DD DSN=HERC01.PEOPLE,DISP=SHR
+//GO.QSYSPRT   DD SYSOUT=A
+//

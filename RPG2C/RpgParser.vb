@@ -2,6 +2,7 @@ Imports System.IO
 
 Public Class RpgParser
     Public Property FileSpecs As New List(Of FileSpec)
+    Public Property LineCounterSpecs As New List(Of LineCounterSpec)
     Public Property InputSpecs As New List(Of InputSpec)
     Public Property CalcSpecs As New List(Of CalcSpec)
     Public Property OutputSpecs As New List(Of OutputSpec)
@@ -27,6 +28,8 @@ Public Class RpgParser
                     ' Control spec - currently ignored in generator but parsed
                 Case "F"c
                     FileSpecs.Add(ParseFileSpec(line, lineNum))
+                Case "L"c
+                    LineCounterSpecs.Add(ParseLineCounterSpec(line, lineNum))
                 Case "I"c
                     InputSpecs.Add(ParseInputSpec(line, lineNum))
                 Case "C"c
@@ -36,7 +39,7 @@ Public Class RpgParser
                 Case " "c, "*"c
                     ' Comment or blank
                 Case Else
-                    Errors.Add(New RpgError(lineNum, "INVALID SPEC TYPE", $"Spec type '{typeChars}' is not recognized (Expected H, F, I, C, O)."))
+                    Errors.Add(New RpgError(lineNum, "INVALID SPEC TYPE", $"Spec type '{typeChars}' is not recognized (Expected H, F, L, I, C, O)."))
             End Select
         Next
     End Sub
@@ -46,7 +49,20 @@ Public Class RpgParser
         spec.Filename = Extract(line, 7, 8)
         spec.FileType = Extract(line, 15, 1) ' I = Input, O = Output, U = Update, C = Combined
         spec.FileDesignation = Extract(line, 16, 1) ' P = Primary, S = Secondary, R = Record, T = Table, F = Full Procedural
-        spec.RecordLength = ValidateInt(line, 24, 4, lineNum, "RECORD LENGTH")
+        spec.EndOfFile = Extract(line, 17, 1) ' E = End of File
+        spec.FileFormat = Extract(line, 18, 1) ' F = Fixed, V = Variable
+        
+        ' IBM RPG II: Cols 24-27 = Record Length (first part), Cols 28-31 = Record Length continuation or Key Field
+        Dim recLen1 = ExtractExact(line, 24, 4)
+        Dim recLen2 = ExtractExact(line, 28, 4)
+        
+        ' Parse record length - typically zero-filled like "00870087" means 87 bytes
+        If Not String.IsNullOrWhiteSpace(recLen1) Then
+            spec.RecordLength = ValidateInt(line, 24, 4, lineNum, "RECORD LENGTH")
+        End If
+        
+        spec.KeyFieldStart = ExtractExact(line, 28, 4) ' May be key field or record length continuation
+        spec.OverflowIndicator = Extract(line, 33, 2) ' OF = Overflow
         spec.Device = Extract(line, 40, 7)
 
         If String.IsNullOrWhiteSpace(spec.Filename) Then
@@ -54,10 +70,35 @@ Public Class RpgParser
         End If
 
         If spec.RecordLength <= 0 Then
-            Dim rawVal = Extract(line, 24, 4)
+            Dim rawVal = ExtractExact(line, 24, 4)
             Errors.Add(New RpgError(lineNum, "INVALID REC LEN", $"Record length must be > 0 (Found: '{rawVal}' in cols 24-27)"))
         End If
 
+        Return spec
+    End Function
+
+    Private Function ParseLineCounterSpec(line As String, lineNum As Integer) As LineCounterSpec
+        Dim spec As New LineCounterSpec()
+        spec.Filename = Extract(line, 7, 8)
+        
+        ' IBM RPG II L-Spec format:
+        ' Cols 7-14: Filename
+        ' Cols 15-17: Lines per page (e.g., "001")
+        ' Cols 18-20: Line number for overflow (e.g., "010")
+        ' Cols 21-22: Line number for first detail line (e.g., "60")
+        ' Cols 23-24: Line number for last detail line (e.g., "12")
+        
+        spec.LinesPerPage = ValidateInt(line, 15, 3, lineNum, "LINES PER PAGE")
+        spec.OverflowLine = ValidateInt(line, 18, 3, lineNum, "OVERFLOW LINE")
+        
+        ' The remaining columns may contain line counter values
+        Dim lineCounterData = ExtractExact(line, 21, 4)
+        spec.LineCounterData = lineCounterData
+        
+        If String.IsNullOrWhiteSpace(spec.Filename) Then
+            Errors.Add(New RpgError(lineNum, "MISSING FILENAME", "L-Spec must define a filename."))
+        End If
+        
         Return spec
     End Function
 
@@ -68,15 +109,34 @@ Public Class RpgParser
         ' If filename is present, it's a Record identification line
         If Not String.IsNullOrWhiteSpace(spec.Filename) Then
             spec.IsRecordLine = True
-            spec.Sequence = Extract(line, 15, 2)
-            spec.RecordIdIndicator = Extract(line, 19, 2)
             
-            ' Basic Record ID codes (Pos 1)
+            ' IBM RPG II I-Spec Record Identification:
+            ' Cols 7-14: Filename
+            ' Cols 15-16: Sequence (AA, BB, etc.)
+            ' Col 17: Number (N)
+            ' Col 18: Option (O)
+            ' Cols 19-20: Record identifying indicator (01-99)
+            ' Cols 21-22: Sequence number
+            
+            spec.Sequence = ExtractExact(line, 15, 2)
+            spec.Number = Extract(line, 17, 1)
+            spec.OptionEntry = Extract(line, 18, 1)
+            spec.RecordIdIndicator = ExtractExact(line, 19, 2)
+            spec.SequenceNumber = ExtractExact(line, 21, 2)
+            
+            ' Basic Record ID codes (Pos 1) - for matching logic
             spec.IdPos1 = ValidateInt(line, 21, 4, lineNum, "ID POS 1")
             spec.IdChar1 = Extract(line, 26, 1)
         Else
             ' It's a field description line
             spec.IsRecordLine = False
+            
+            ' IBM RPG II I-Spec Field Description:
+            ' Cols 44-47: From position (zero-filled, right-justified)
+            ' Cols 48-51: To position (zero-filled, right-justified)
+            ' Col 52: Decimal positions
+            ' Cols 53-58: Field name
+            
             spec.StartPos = ValidateInt(line, 44, 4, lineNum, "FROM POSITION")
             spec.EndPos = ValidateInt(line, 48, 4, lineNum, "TO POSITION")
             spec.DecimalPos = Extract(line, 52, 1)
@@ -153,32 +213,68 @@ Public Class RpgParser
         Dim spec As New OutputSpec()
         spec.Filename = Extract(line, 7, 8)
         
-        If Not String.IsNullOrWhiteSpace(spec.Filename) OrElse Extract(line, 15, 1) <> "" Then
+        ' Check if this is a record identification line or field line
+        Dim typeChar = Extract(line, 15, 1)
+        
+        If Not String.IsNullOrWhiteSpace(spec.Filename) OrElse typeChar <> "" Then
             ' File/Record Identification line
             spec.IsRecordLine = True
-            spec.Type = Extract(line, 15, 1) ' H, D, T, E
-            spec.SpaceAfter = Extract(line, 19, 2)
-            spec.OutputIndicator1 = Extract(line, 25, 7)
+            
+            ' IBM RPG II O-Spec Record Identification:
+            ' Cols 7-14: Filename
+            ' Col 15: Type (H=Heading, D=Detail, T=Total, E=Exception)
+            ' Col 16: Fetch overflow
+            ' Cols 17-18: Space before
+            ' Col 19: Space after
+            ' Cols 21-22: Skip before
+            ' Col 23: Skip after
+            ' Cols 25-31: Output indicators (e.g., 1P, OF, 01)
+            
+            spec.Type = typeChar
+            spec.FetchOverflow = Extract(line, 16, 1)
+            spec.SpaceBefore = ExtractExact(line, 17, 2)
+            spec.SpaceAfter = ExtractExact(line, 19, 1)
+            spec.SkipBefore = ExtractExact(line, 21, 2)
+            spec.SkipAfter = Extract(line, 23, 1)
+            spec.OutputIndicator1 = ExtractExact(line, 25, 7)
+            
+            ' Check for OR/OF overflow line (no filename, just OR or OF in indicator position)
+            If String.IsNullOrWhiteSpace(spec.Filename) AndAlso spec.OutputIndicator1.Trim() = "OR" Then
+                spec.IsOverflowLine = True
+                spec.OverflowType = "OR"
+            ElseIf String.IsNullOrWhiteSpace(spec.Filename) AndAlso spec.OutputIndicator1.Trim() = "OF" Then
+                spec.IsOverflowLine = True
+                spec.OverflowType = "OF"
+            End If
         Else
             ' Field description line
-            ' IBM RPG II Column Format:
-            ' Cols 32-37: Output indicators
-            ' Col 39: Field name/constant indicator (Y for date)
-            ' Cols 40-43: End position (4 chars, right-justified, zero-filled)
-            ' Cols 45-70: Field name OR constant
-            ' Col 71: Edit code
-            ' Col 72: Blank after
+            ' IBM RPG II O-Spec Field Description:
+            ' Cols 32-37: Field name (for variables)
+            ' Col 38: Edit code
+            ' Col 39: Blank after
+            ' Cols 40-43: End position (zero-filled, right-justified)
+            ' Cols 45-70: Constant (for literals in quotes)
+            
             spec.IsRecordLine = False
-            spec.OutputIndicator1 = Extract(line, 32, 6)
+            
+            ' Field name is in cols 32-37 for variable output
+            Dim fieldName = Extract(line, 32, 6)
+            
+            ' End position in cols 40-43
             spec.EndPos = ValidateInt(line, 40, 4, lineNum, "END POSITION")
-            Dim fieldOrConst = Extract(line, 45, 26) ' 45-70
+            
+            ' Constant in cols 45-70
+            Dim constant = ExtractExact(line, 45, 26)
+            
             ' Check if it's a constant (starts with quote) or field name
-            If fieldOrConst.StartsWith("'") Then
-                spec.Constant = fieldOrConst
-            Else
-                spec.FieldName = fieldOrConst
+            If Not String.IsNullOrWhiteSpace(constant) AndAlso constant.Trim().StartsWith("'") Then
+                spec.Constant = constant.Trim()
+            ElseIf Not String.IsNullOrWhiteSpace(fieldName) Then
+                spec.FieldName = fieldName
             End If
-            spec.EditCode = Extract(line, 71, 1)
+            
+            spec.EditCode = Extract(line, 38, 1)
+            spec.BlankAfter = Extract(line, 39, 1)
 
             If String.IsNullOrWhiteSpace(spec.FieldName) AndAlso String.IsNullOrWhiteSpace(spec.Constant) Then
                 Errors.Add(New RpgError(lineNum, "SPEC UNDEFINED", "Output field line must define either a field name or a constant."))
@@ -193,9 +289,18 @@ Public Class RpgParser
     End Function
 
     Private Function Extract(line As String, startCol As Integer, length As Integer) As String
+        ' Extract and trim - use for field names and values where leading/trailing spaces don't matter
         If line.Length < startCol Then Return ""
         Dim len = Math.Min(length, line.Length - startCol + 1)
         Return line.Substring(startCol - 1, len).Trim()
+    End Function
+    
+    Private Function ExtractExact(line As String, startCol As Integer, length As Integer) As String
+        ' Extract exact content without trimming - CRITICAL for IBM RPG II column positioning
+        ' Spaces are significant in RPG II and must be preserved
+        If line.Length < startCol Then Return ""
+        Dim len = Math.Min(length, line.Length - startCol + 1)
+        Return line.Substring(startCol - 1, len)
     End Function
 
     Private Function ExtractInt(line As String, startCol As Integer, length As Integer) As Integer
@@ -251,15 +356,29 @@ Public Class FileSpec
     Public Property Filename As String
     Public Property FileType As String
     Public Property FileDesignation As String
+    Public Property EndOfFile As String
+    Public Property FileFormat As String
     Public Property RecordLength As Integer
+    Public Property KeyFieldStart As String
+    Public Property OverflowIndicator As String
     Public Property Device As String
+End Class
+
+Public Class LineCounterSpec
+    Public Property Filename As String
+    Public Property LinesPerPage As Integer
+    Public Property OverflowLine As Integer
+    Public Property LineCounterData As String
 End Class
 
 Public Class InputSpec
     Public Property IsRecordLine As Boolean
     Public Property Filename As String
     Public Property Sequence As String
+    Public Property Number As String
+    Public Property OptionEntry As String
     Public Property RecordIdIndicator As String
+    Public Property SequenceNumber As String
     Public Property IdPos1 As Integer
     Public Property IdChar1 As String
     
@@ -295,14 +414,21 @@ End Class
 
 Public Class OutputSpec
     Public Property IsRecordLine As Boolean
+    Public Property IsOverflowLine As Boolean
+    Public Property OverflowType As String
     Public Property Filename As String
     Public Property Type As String
+    Public Property FetchOverflow As String
+    Public Property SpaceBefore As String
     Public Property SpaceAfter As String
+    Public Property SkipBefore As String
+    Public Property SkipAfter As String
     Public Property OutputIndicator1 As String
     
     Public Property FieldName As String
     Public Property EndPos As Integer
     Public Property Constant As String
     Public Property EditCode As String
+    Public Property BlankAfter As String
     Public Property EditWord As String
 End Class
